@@ -1,0 +1,15 @@
+[package]
+name = "gize-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core domain model, conventions and manifest for the Gize framework."
+keywords = ["gize", "web", "framework", "codegen"]
+categories = ["web-programming", "development-tools"]
+
+[dependencies]
+serde.workspace = true
+toml.workspace = true
+anyhow.workspace = true

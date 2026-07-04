@@ -1,0 +1,15 @@
+[package]
+name = "gize-generator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Code generation engine for Gize: safe file writing and template rendering."
+keywords = ["gize", "codegen", "scaffolding", "generator"]
+categories = ["development-tools"]
+
+[dependencies]
+gize-core.workspace = true
+gize-templates.workspace = true
+anyhow.workspace = true

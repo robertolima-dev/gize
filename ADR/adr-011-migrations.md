@@ -1,0 +1,51 @@
+# ADR-011: Migration strategy
+
+- **Status:** Accepted
+- **Date:** 2026-07-04
+- **Deciders:** Gize core team
+
+## Context
+
+Gize generates models and must keep the database schema in sync. Migrations must be
+inspectable (philosophy: no magic), versioned, ordered, and safe to apply/rollback.
+
+## Alternatives
+
+1. **SQLx migrations (SQL-first).** Plain `.sql` files in `migrations/`, applied by the
+   SQLx migrator, tracked in a `_sqlx_migrations` table. Fully inspectable SQL.
+2. **SeaORM migrations (Rust-DSL).** Migrations written as Rust code via SeaORM's migration
+   framework. Tied to adopting SeaORM (rejected in ADR-003).
+3. **Custom migration engine.** Full control, high cost, reinvents a solved problem.
+4. **Auto-migrate from models at runtime.** Convenient but hides schema changes and is
+   dangerous in production — rejected outright.
+
+## Decision
+
+Use **SQLx SQL-first migrations**, consistent with ADR-003:
+
+- Migrations are timestamped `.sql` files under `migrations/` (e.g.
+  `20260704120000_create_products.sql`), with optional paired `.down.sql` for rollback.
+- `gize make migration` generates migration SQL — for `gize make model`/`crud`, it derives
+  a `CREATE TABLE` from the model's fields; standalone, it creates an empty migration to
+  edit.
+- `gize migrate` applies pending migrations via the SQLx migrator; `gize migrate --status`
+  shows applied vs. pending; rollback applies the `.down.sql`.
+- Migrations are checked into version control and are the source of truth for the schema.
+
+Model→migration is a **generation aid, not a runtime auto-sync**: the developer reviews and
+edits the SQL before applying.
+
+## Trade-offs
+
+- (+) Plain SQL is transparent, portable, and DBA-reviewable.
+- (+) Reuses SQLx's battle-tested migrator; no engine to maintain.
+- (+) No risky runtime auto-migration.
+- (−) Developers must understand SQL DDL (acceptable and arguably desirable).
+- (−) Diff-based migrations (schema drift → migration) are non-trivial; MVP generates
+  create-table only, with smarter diffing deferred to Alpha.
+
+## Consequences
+
+- `gize-db` owns the migrator integration and the field-type → SQL-type mapping.
+- CI runs migrations against a Postgres service before integration tests.
+- Rollback support (`.down.sql`) is generated where derivable; otherwise stubbed with a TODO.

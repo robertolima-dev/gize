@@ -1,0 +1,494 @@
+<div align="center">
+
+# Gize
+
+**Productivity-first backend framework for Rust.**
+
+Django-like velocity — scaffolding, conventions, generators, migrations —
+without giving up Rust's guarantees, performance, or transparency.
+
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Status](https://img.shields.io/badge/status-MVP-yellow.svg)](#project-status)
+
+</div>
+
+> The name comes from the plateau of the Great Pyramids — solid foundations meant to last.
+
+Gize lets you go from an empty directory to a running, production-shaped CRUD API in
+minutes. It generates **idiomatic Rust you own** — plain Axum handlers, plain SQLx
+queries, plain SQL migrations. No hidden runtime, no reflection, no magic. Delete Gize and
+you still have a working, idiomatic Rust codebase.
+
+---
+
+## Table of contents
+
+- [Why Gize?](#why-gize)
+- [Philosophy](#philosophy)
+- [Project status](#project-status)
+- [Installation](#installation)
+- [Quickstart](#quickstart)
+- [Command reference](#command-reference)
+- [The generated project](#the-generated-project)
+- [Models and field types](#models-and-field-types)
+- [Anatomy of a generated CRUD resource](#anatomy-of-a-generated-crud-resource)
+- [The `gize.toml` manifest](#the-gizetoml-manifest)
+- [Database and migrations](#database-and-migrations)
+- [Runtime configuration](#runtime-configuration)
+- [The safety model](#the-safety-model)
+- [Architecture](#architecture)
+- [Developing Gize](#developing-gize)
+- [Roadmap](#roadmap)
+- [Comparison](#comparison)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Why Gize?
+
+Rust is excellent for backends — fast, safe, predictable — but **starting** a real project
+is slow. There is no blessed layout, no scaffolding, no generators. Every team hand-wires a
+router, a database pool, config, migrations, error handling, and repeats the
+model → migration → repository → service → DTO → handler → routes → tests dance for every
+resource.
+
+Gize removes that day-one tax. One command scaffolds the project; one command generates a
+full CRUD resource wired end-to-end; one command applies migrations; one command runs it.
+What you get is normal Rust you can read and edit — Gize writes the boring 80%, you own
+100%.
+
+## Philosophy
+
+- **Zero-cost abstractions.** Generated code is idiomatic and explicit.
+- **No magic.** No hidden framework runtime; everything is a file you can read and diff.
+- **You own the code.** Gize is an accelerator, not a cage — remove it and the app still
+  works.
+- **No unnecessary dependencies.** Every dependency is justified in an ADR.
+- **Convention over configuration**, but customization is always possible.
+- **Analyze, then decide, then implement.** Every significant choice is recorded as an ADR
+  in [`ADR/`](./ADR).
+
+## Project status
+
+**MVP.** The core generator and CLI are functional and verified end-to-end against a real
+PostgreSQL database (create → migrate → serve → CRUD over HTTP).
+
+| Command | State | What it does |
+| --- | --- | --- |
+| `gize new` | ✅ | Scaffold a new project |
+| `gize make app` | ✅ | Scaffold a module and wire it in |
+| `gize make model` | ✅ | Generate a model + migration |
+| `gize make crud` | ✅ | Generate a full CRUD resource |
+| `gize migrate` | ✅ | Apply / inspect migrations |
+| `gize serve` | ✅ | Build and run the app |
+| `gize doctor` | ✅ | Diagnose environment/project |
+| `gize make migration` | 🚧 | Standalone / diff migrations (planned) |
+| `gize sync` | 🚧 | Reconcile from `gize.toml` (Alpha) |
+| `gize make admin` | 🚧 | Admin UI (Beta) |
+| `gize fmt` / `gize check` | 🚧 | rustfmt / clippy wrappers (planned) |
+
+See [`docs/roadmap.md`](./docs/roadmap.md) for the full plan (MVP → Alpha → Beta → RC →
+v1.0 → v2.0).
+
+## Installation
+
+**From source** (until crates are published):
+
+```bash
+git clone https://github.com/robertolima/gize
+cd gize
+cargo build --release
+# the CLI binary is target/release/gize
+cp target/release/gize /usr/local/bin/   # or add target/release to PATH
+```
+
+**Once published** (planned for 0.1.0):
+
+```bash
+cargo install gize-cli   # installs the `gize` binary
+```
+
+### Prerequisites
+
+- Rust **1.85+** (edition 2024).
+- **PostgreSQL** for running generated apps (`gize migrate` / `gize serve`).
+
+## Quickstart
+
+Build a working product API in four commands.
+
+```bash
+# 1. Scaffold a project (Axum + SQLx + PostgreSQL)
+gize new shop
+cd shop
+
+# 2. Generate a full CRUD resource
+gize make crud Product name:String price:i32 active:bool
+
+# 3. Point at a database and apply the generated migration
+cp .env.example .env                     # then edit DATABASE_URL if needed
+export DATABASE_URL=postgres://localhost:5432/shop
+createdb shop
+gize migrate
+
+# 4. Run it
+gize serve
+```
+
+Now exercise the API:
+
+```bash
+# Create
+curl -X POST localhost:8080/products \
+  -H 'content-type: application/json' \
+  -d '{"name":"Widget","price":1299,"active":true}'
+# → {"id":"…","name":"Widget","price":1299,"active":true,"created_at":"…","updated_at":"…"}
+
+curl localhost:8080/products            # list
+curl localhost:8080/products/<id>       # show
+curl -X PUT localhost:8080/products/<id> \
+  -H 'content-type: application/json' \
+  -d '{"name":"Widget","price":1500,"active":false}'   # update
+curl -X DELETE localhost:8080/products/<id>            # delete → 204
+```
+
+Deleting a missing id returns `404` — the generated typed error maps `RowNotFound` to
+`NOT_FOUND` for you.
+
+## Command reference
+
+Global flags on every **generating** command (`new`, `make …`):
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Print the planned file operations; write nothing. |
+| `--force` | Overwrite files that already exist (otherwise they are skipped). |
+
+### `gize new <name>`
+
+Scaffolds a new project into a directory named `<name>`: `Cargo.toml`, `gize.toml`,
+`.env.example`, `.gitignore`, and the full `src/` layout (see below). The project compiles
+and serves an empty app immediately.
+
+### `gize make app <name>`
+
+Scaffolds an application module `<name>` — the nine files of the module layout — with a
+placeholder health route, then **registers it idempotently**: adds `mod <name>;` and
+`.merge(<name>::routes())` to `src/app/mod.rs` and appends it to `[modules]` in
+`gize.toml`. Re-running is a no-op.
+
+### `gize make model <Name> field:Type …`
+
+Generates `src/app/<table>/model.rs` (an `sqlx::FromRow` struct with `id` + timestamps) and
+a `CREATE TABLE` migration. The module directory is the pluralized snake_case of the model
+(`User` → `users`).
+
+### `gize make crud <Name> field:Type …`
+
+The headline command. Generates a complete, wired vertical slice for the resource:
+
+```
+src/app/<table>/
+  mod.rs          model.rs      dto.rs        error.rs
+  repository.rs   service.rs    handler.rs    routes.rs      tests.rs
+migrations/<ts>_create_<table>.sql
+```
+
+…and registers the module in `src/app/mod.rs` and `gize.toml`. The result exposes working
+`GET / POST / PUT / DELETE` endpoints backed by the database.
+
+```bash
+gize make crud Product name:String price:i32 active:bool
+gize make crud Order   total:i64 paid:bool
+gize make crud Article title:String body:String published:bool --dry-run
+```
+
+### `gize migrate [--status]`
+
+Applies pending migrations from `migrations/*.sql` against `DATABASE_URL`, using SQLx's
+migrator (tracked in the `_sqlx_migrations` table — ordered and idempotent).
+
+```bash
+gize migrate            # apply all pending
+gize migrate --status   # list applied [x] vs pending [ ]
+```
+
+### `gize serve`
+
+Builds and runs the generated application (`cargo run`), streaming its logs. Reads
+`DATABASE_URL` and `PORT` (default `8080`) from the environment.
+
+### `gize doctor`
+
+Sanity-checks the environment and project: `cargo`/`rustfmt` availability, whether you are
+inside a Gize project, and whether `DATABASE_URL` is set.
+
+## The generated project
+
+`gize new` produces this layout ([ADR-005](./ADR/adr-005-module-layout.md) explains every
+directory):
+
+```
+shop/
+├── Cargo.toml            # axum, tokio, sqlx, serde, uuid, chrono, tracing
+├── gize.toml             # the project manifest
+├── .env.example          # runtime config template
+└── src/
+    ├── app/
+    │   ├── mod.rs        # aggregates modules + merges their routers (has gize: markers)
+    │   └── <resource>/   # one directory per resource (added by make app / make crud)
+    │       ├── mod.rs        # declares the module's files, re-exports routes
+    │       ├── model.rs      # domain struct (sqlx::FromRow)
+    │       ├── dto.rs        # request/response payloads
+    │       ├── repository.rs # SQL access (SQLx)
+    │       ├── service.rs    # business logic
+    │       ├── handler.rs    # Axum handlers (HTTP ↔ service)
+    │       ├── routes.rs     # this module's Router
+    │       ├── error.rs      # typed error → IntoResponse
+    │       └── tests.rs      # tests
+    ├── config/           # typed runtime configuration
+    ├── database/         # (reserved) pool/migration hooks
+    ├── middleware/       # (reserved) Tower layers
+    ├── shared/           # (reserved) cross-cutting utilities
+    ├── router.rs         # top-level router; applies AppState
+    ├── state.rs          # AppState { db: PgPool }
+    └── main.rs           # entrypoint: build state, serve
+```
+
+The `// gize:modules` and `// gize:module-routes` markers in `app/mod.rs` are how `make
+app` / `make crud` wire new modules in without disturbing your code. Leave them in place;
+edit anything else freely.
+
+## Models and field types
+
+Fields are given inline as `name:Type` (the canonical UX per
+[ADR-012](./ADR/adr-012-cli.md)). Every model also gets an `id: Uuid` primary key and
+`created_at` / `updated_at` timestamps automatically.
+
+| Gize type | Aliases | Rust type | PostgreSQL type |
+| --- | --- | --- | --- |
+| `String` | `str` | `String` | `TEXT` |
+| `bool` | `boolean` | `bool` | `BOOLEAN` |
+| `i32` | `int` | `i32` | `INTEGER` |
+| `i64` | `bigint`, `long` | `i64` | `BIGINT` |
+| `f64` | `float`, `double` | `f64` | `DOUBLE PRECISION` |
+| `Uuid` | — | `uuid::Uuid` | `UUID` |
+| `DateTime` | `timestamp` | `chrono::DateTime<Utc>` | `TIMESTAMPTZ` |
+
+Types are case-insensitive. Unknown types are rejected early with a helpful message.
+
+## Anatomy of a generated CRUD resource
+
+`gize make crud Product name:String price:i32 active:bool` produces a clean layered slice.
+A taste of each layer:
+
+**`model.rs`**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Product {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub price: i32,
+    pub active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+```
+
+**`repository.rs`** (SQLx runtime queries — compile without a database connection)
+```rust
+pub async fn create(pool: &PgPool, input: &CreateProduct) -> Result<Product, sqlx::Error> {
+    sqlx::query_as::<_, Product>(
+        "INSERT INTO products (name, price, active) VALUES ($1, $2, $3) RETURNING *",
+    )
+    .bind(input.name.clone())
+    .bind(input.price)
+    .bind(input.active)
+    .fetch_one(pool)
+    .await
+}
+```
+
+**`handler.rs`** (plain Axum)
+```rust
+pub async fn create(
+    State(state): State<AppState>,
+    Json(input): Json<CreateProduct>,
+) -> Result<(StatusCode, Json<Product>), Error> {
+    let item = service::create(&state.db, &input).await?;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+```
+
+**`error.rs`** (typed, maps to HTTP)
+```rust
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            Error::Database(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        };
+        (status, message).into_response()
+    }
+}
+```
+
+No macros hide any of this — it is exactly what you would write by hand
+([ADR-007](./ADR/adr-007-macros.md) explains why Gize prefers generated source over
+proc-macros).
+
+## The `gize.toml` manifest
+
+The declarative source of truth for a project's shape ([ADR-009](./ADR/adr-009-configuration.md)).
+It drives the (planned) `gize sync` and is updated automatically by `make app` / `make
+crud`. It never holds secrets — those live in the environment.
+
+```toml
+[project]
+name = "shop"
+
+[stack]
+framework = "axum"
+database  = "postgres"
+orm       = "sqlx"
+
+[features]
+authentication = false
+admin          = false
+openapi        = false
+
+[modules]
+list = ["orders", "products"]
+```
+
+## Database and migrations
+
+- Migrations are **plain SQL** files in `migrations/`, named
+  `<version>_create_<table>.sql` ([ADR-011](./ADR/adr-011-migrations.md)).
+- `gize make model` / `gize make crud` derive a `CREATE TABLE` from the model's fields —
+  review and edit the SQL before applying.
+- `gize migrate` applies them via the SQLx migrator, which records applied versions in
+  `_sqlx_migrations` (ordered, idempotent). There is **no** risky runtime auto-migration.
+
+```sql
+-- migrations/…_create_products.sql
+CREATE TABLE products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    active BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+> `gen_random_uuid()` is built into PostgreSQL 13+. On older versions run
+> `CREATE EXTENSION pgcrypto;` once.
+
+## Runtime configuration
+
+Generated apps are 12-factor: runtime config comes from **environment variables**, not from
+`gize.toml`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | — (required) | PostgreSQL connection string |
+| `PORT` | `8080` | HTTP listen port |
+
+`gize new` writes a `.env.example` you can copy to `.env` for local development.
+
+## The safety model
+
+Generators never destroy your work ([ADR-012](./ADR/adr-012-cli.md)):
+
+- Existing files are **skipped** unless you pass `--force`.
+- `--dry-run` shows the full plan (`create` / `skip` / `update`) and writes nothing.
+- Registry edits to `app/mod.rs` and `gize.toml` are **idempotent** — re-running a
+  generator does not duplicate anything.
+
+```text
+$ gize make crud Product name:String price:i32 --dry-run
+Generated CRUD for `Product`:
+dry-run — no files written
+  create  src/app/products/mod.rs
+  create  src/app/products/model.rs
+  …
+  update  src/app/mod.rs (would register module + routes)
+  update  gize.toml (would add module to [modules])
+```
+
+## Architecture
+
+Gize is a Cargo workspace ([ADR-001](./ADR/adr-001-workspace.md)). The dependency direction
+flows toward a framework-agnostic core:
+
+```
+gize-cli ──> gize-generator ──> gize-templates ──┐
+   │              │                               ├──> gize-core
+   └──> gize-db ──┴───────────────────────────────┘
+```
+
+| Crate | Responsibility |
+| --- | --- |
+| `gize-core` | Domain model: manifest, field/model specs, naming. No framework deps. |
+| `gize-generator` | Codegen engine: pure `Plan`s, the safe `Writer`, idempotent registry edits. |
+| `gize-templates` | The templates for generated projects, modules, models, and CRUD. |
+| `gize-db` | Data-layer conventions + the SQLx migration runner. |
+| `gize-macros` | Procedural macros (intentionally tiny — see ADR-007). |
+| `gize-cli` | The `gize` binary (clap). Orchestrates the above. |
+| `gize-admin`, `gize-auth`, `gize-openapi`, `gize-testing` | Planned feature crates (placeholders today). |
+
+Design decisions live in [`ADR/`](./ADR); the vision, MVP scope, and roadmap live in
+[`docs/`](./docs).
+
+## Developing Gize
+
+```bash
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all
+```
+
+CI (`.github/workflows/ci.yml`) enforces fmt + clippy (`-D warnings`) + tests on every push
+and PR.
+
+## Roadmap
+
+- **MVP** (now): project + module + model + CRUD generators, migrations, serve.
+- **Alpha**: `gize sync`, auth scaffolding, relationships, validation, migration diffing.
+- **Beta**: admin UI (`gize make admin`), OpenAPI generation, a plugin API.
+- **RC → v1.0**: API/codegen stability, benchmarks, security review, complete docs.
+
+Full detail with acceptance criteria in [`docs/roadmap.md`](./docs/roadmap.md).
+
+## Comparison
+
+- **vs. Django / Rails / Laravel** — the same generator/convention productivity, but
+  compiled, type-safe, and with generated code you can read.
+- **vs. plain Axum** — Gize *uses* Axum; it adds the layout, scaffolding, and ecosystem
+  Axum leaves to you. You still ship plain Axum code.
+- **vs. Loco** — a different bet: transparent generated code over a heavy framework runtime,
+  and SQLx-first over an ORM.
+
+See [`docs/vision.md`](./docs/vision.md) for the detailed comparison.
+
+## Contributing
+
+Contributions are welcome. Because Gize is decision-driven, please open an ADR (or discuss
+one) for anything architectural before implementing — see
+[ADR-000](./ADR/adr-000-process.md) for the process. Keep `cargo fmt`, `cargo clippy -D
+warnings`, and `cargo test` green.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](./LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](./LICENSE-MIT))
+
+at your option. Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you shall be dual licensed as above, without any
+additional terms or conditions.

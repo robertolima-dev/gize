@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/robertolima/gize"
+rust-version = "1.85"
+
+[workspace.dependencies]
+gize-core = { path = "crates/gize-core", version = "0.1.0" }
+gize-generator = { path = "crates/gize-generator", version = "0.1.0" }
+gize-templates = { path = "crates/gize-templates", version = "0.1.0" }
+gize-db = { path = "crates/gize-db", version = "0.1.0" }
+gize-macros = { path = "crates/gize-macros", version = "0.1.0" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate"] }
+tokio = { version = "1", features = ["full"] }

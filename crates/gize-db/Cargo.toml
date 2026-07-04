@@ -1,0 +1,16 @@
+[package]
+name = "gize-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Data-layer conventions and SQLx migrations for Gize. See ADR-003 / ADR-011."
+keywords = ["gize", "sqlx", "postgres", "migrations", "database"]
+categories = ["database"]
+
+[dependencies]
+gize-core.workspace = true
+anyhow.workspace = true
+sqlx.workspace = true
+tokio.workspace = true

@@ -1,0 +1,22 @@
+[package]
+name = "gize-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The Gize command-line interface — productivity-first backend framework for Rust."
+keywords = ["web", "framework", "codegen", "cli", "scaffolding"]
+categories = ["command-line-utilities", "web-programming", "development-tools"]
+homepage = "https://github.com/robertolima/gize"
+
+[[bin]]
+name = "gize"
+path = "src/main.rs"
+
+[dependencies]
+gize-core.workspace = true
+gize-generator.workspace = true
+gize-db.workspace = true
+anyhow.workspace = true
+clap = { workspace = true }

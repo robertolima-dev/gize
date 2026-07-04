@@ -1,0 +1,42 @@
+{
+  "version": "0.2",
+  "language": "en,pt,pt_BR",
+  "words": [
+    "gize",
+    "Gize",
+    "axum",
+    "Axum",
+    "actix",
+    "Actix",
+    "sqlx",
+    "SQLx",
+    "seaorm",
+    "SeaORM",
+    "tokio",
+    "Tokio",
+    "clap",
+    "minijinja",
+    "askama",
+    "prettyplease",
+    "rustfmt",
+    "clippy",
+    "Miri",
+    "codegen",
+    "Codegen",
+    "roundtrips",
+    "pluralize",
+    "pluralizes",
+    "Laravel",
+    "Loco",
+    "12factor",
+    "TIMESTAMPTZ",
+    "uuidv4",
+    "tracing"
+  ],
+  "ignorePaths": [
+    "target/**",
+    "Cargo.lock"
+  ],
+  "dictionaries": ["en_US", "software-terms"],
+  "allowCompoundWords": true
+}
