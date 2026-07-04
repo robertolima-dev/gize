@@ -8,7 +8,7 @@ rust-version.workspace = true
 description = "The Gize command-line interface — productivity-first backend framework for Rust."
 keywords = ["web", "framework", "codegen", "cli", "scaffolding"]
 categories = ["command-line-utilities", "web-programming", "development-tools"]
-homepage = "https://github.com/robertolima/gize"
+homepage = "https://github.com/robertolima-dev/gize"
 
 [[bin]]
 name = "gize"

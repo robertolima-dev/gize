@@ -35,5 +35,15 @@ jobs:
       - name: Publish gize-generator
         run: cargo publish -p gize-generator --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      # Crates independentes (sem dependências internas) — ordem livre.
+      - name: Publish gize-macros
+        run: cargo publish -p gize-macros --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish gize-openapi
+        run: cargo publish -p gize-openapi --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish gize-testing
+        run: cargo publish -p gize-testing --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
       - name: Publish gize
         run: cargo publish -p gize --token ${{ secrets.CARGO_REGISTRY_TOKEN }}

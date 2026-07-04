@@ -1,0 +1,22 @@
+# gize-auth
+
+**Authentication scaffolding for the [Gize](https://github.com/robertolima-dev/gize) framework.**
+
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/robertolima-dev/gize#license)
+
+`gize-auth` will scaffold authentication — users, sessions/tokens, and route guards — for
+Gize-generated applications, keeping the generated code idiomatic and fully owned by you.
+
+> **Status:** placeholder, **Alpha**-phase feature. This crate is currently marked
+> `publish = false` and is **not** published to crates.io while its design is in flux. It
+> lives in the workspace so development can proceed alongside the MVP.
+
+## Part of the Gize workspace
+
+See the [main project](https://github.com/robertolima-dev/gize) for the full crate list and
+roadmap.
+
+## License
+
+Licensed under either of [Apache-2.0](https://github.com/robertolima-dev/gize/blob/main/LICENSE-APACHE)
+or [MIT](https://github.com/robertolima-dev/gize/blob/main/LICENSE-MIT) at your option.

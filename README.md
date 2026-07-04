@@ -94,20 +94,20 @@ v1.0 → v2.0).
 
 ## Installation
 
-**From source** (until crates are published):
+**From crates.io:**
 
 ```bash
-git clone https://github.com/robertolima/gize
+cargo install gize   # installs the `gize` binary
+```
+
+**From source:**
+
+```bash
+git clone https://github.com/robertolima-dev/gize
 cd gize
 cargo build --release
 # the CLI binary is target/release/gize
 cp target/release/gize /usr/local/bin/   # or add target/release to PATH
-```
-
-**Once published** (planned for 0.1.0):
-
-```bash
-cargo install gize   # installs the `gize` binary
 ```
 
 ### Prerequisites
