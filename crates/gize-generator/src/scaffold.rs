@@ -93,6 +93,16 @@ pub fn make_crud(model: &ModelSpec, timestamp: &str) -> Plan {
         )
 }
 
+/// Plan for `gize make migration <name>`: a single blank, timestamped SQL file the developer
+/// fills in by hand. `name` is already snake_cased by the CLI; `timestamp` is injected so
+/// generation stays pure and tests are deterministic.
+pub fn make_migration(name: &str, timestamp: &str) -> Plan {
+    Plan::new().create(
+        format!("migrations/{timestamp}_{name}.sql"),
+        model::blank_migration_sql(name),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +147,20 @@ mod tests {
         assert!(paths.contains(&"src/app/products/handler.rs".to_string()));
         assert!(paths.contains(&"src/app/products/dto.rs".to_string()));
         assert!(paths.contains(&"migrations/20260704120000_create_products.sql".to_string()));
+    }
+
+    #[test]
+    fn make_migration_plan_is_single_timestamped_file() {
+        let plan = make_migration("add_index_to_users", "20260704120000");
+        let paths: Vec<_> = plan
+            .ops
+            .iter()
+            .map(|o| o.path.display().to_string())
+            .collect();
+        assert_eq!(
+            paths,
+            vec!["migrations/20260704120000_add_index_to_users.sql".to_string()]
+        );
     }
 
     #[test]

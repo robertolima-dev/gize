@@ -78,6 +78,9 @@ use sqlx::PgPool;
 /// Shared application state, injected into every handler.
 #[derive(Clone)]
 pub struct AppState {
+    // Read by generated repositories once you add a resource (`gize make crud`).
+    // Allowed to be unused so a freshly scaffolded, model-less app stays clippy-clean.
+    #[allow(dead_code)]
     pub db: PgPool,
 }
 

@@ -167,6 +167,77 @@ pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> 
     Ok(())
 }
 
+/// `gize make migration [name]` — generate a blank, timestamped SQL migration to fill in by
+/// hand (ADR-011). Model-driven `CREATE TABLE` files come from `make model`/`make crud`; this
+/// is the escape hatch for everything else (indexes, constraints, backfills).
+pub fn make_migration(name: Option<&str>, flags: GenFlags) -> Result<()> {
+    ensure_in_project()?;
+    let migration_name = slugify(name.unwrap_or("migration"));
+    if migration_name.is_empty() {
+        bail!("migration name must contain at least one letter or digit");
+    }
+
+    let plan = scaffold::make_migration(&migration_name, &migration_timestamp());
+    let report = Writer::new(flags.into())
+        .apply(Path::new("."), &plan)
+        .context("generating migration")?;
+    println!(
+        "Generated migration `{migration_name}`:\n{}",
+        report.render(flags.dry_run)
+    );
+    if !flags.dry_run {
+        println!("\nEdit the SQL, then apply it with:\n  gize migrate");
+    }
+    Ok(())
+}
+
+/// `gize fmt` — format the project with rustfmt (thin wrapper; ADR-012).
+pub fn fmt() -> Result<()> {
+    ensure_in_project()?;
+    run_cargo(&["fmt", "--all"], "cargo fmt")
+}
+
+/// `gize check` — lint the project with clippy, denying warnings (thin wrapper; ADR-012).
+pub fn check() -> Result<()> {
+    ensure_in_project()?;
+    run_cargo(
+        &["clippy", "--all-targets", "--", "-D", "warnings"],
+        "cargo clippy",
+    )
+}
+
+/// Turn a free-text migration name into a filename-safe snake_case slug. Handles both
+/// PascalCase (`AddIndexToUsers`) and loose text (`add index to users`) by snake-casing first,
+/// then collapsing every run of non-alphanumeric characters into a single `_`.
+fn slugify(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut pending_sep = false;
+    for ch in snake_case(input).chars() {
+        if ch.is_ascii_alphanumeric() {
+            if pending_sep && !out.is_empty() {
+                out.push('_');
+            }
+            out.push(ch);
+            pending_sep = false;
+        } else {
+            pending_sep = true;
+        }
+    }
+    out
+}
+
+/// Run a `cargo` subcommand inheriting stdio, mapping a non-zero exit into an error.
+fn run_cargo(args: &[&str], label: &str) -> Result<()> {
+    let status = std::process::Command::new("cargo")
+        .args(args)
+        .status()
+        .with_context(|| format!("failed to launch `{label}` — is cargo installed?"))?;
+    if !status.success() {
+        bail!("`{label}` exited with a non-zero status");
+    }
+    Ok(())
+}
+
 /// `gize migrate [--status]` — apply pending SQL migrations (ADR-011), or report state.
 pub fn migrate(show_status: bool) -> Result<()> {
     ensure_in_project()?;
@@ -227,18 +298,18 @@ pub fn serve() -> Result<()> {
 pub fn doctor() -> Result<()> {
     println!("gize doctor\n");
 
-    check("cargo available", which("cargo"));
-    check("rustfmt available", which("rustfmt"));
-    check(
+    report("cargo available", which("cargo"));
+    report("rustfmt available", which("rustfmt"));
+    report(
         "inside a gize project (gize.toml)",
         Path::new("gize.toml").exists(),
     );
-    check("DATABASE_URL set", std::env::var("DATABASE_URL").is_ok());
+    report("DATABASE_URL set", std::env::var("DATABASE_URL").is_ok());
 
     Ok(())
 }
 
-fn check(label: &str, ok: bool) {
+fn report(label: &str, ok: bool) {
     let mark = if ok { "ok  " } else { "warn" };
     println!("  [{mark}] {label}");
 }
@@ -265,4 +336,19 @@ pub fn not_yet(command: &str, planned: &str) -> Result<()> {
     println!("Planned behaviour: {planned}");
     println!("Tracked in BACKLOG.md.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slugify;
+
+    #[test]
+    fn slugify_handles_pascal_case_and_loose_text() {
+        assert_eq!(slugify("AddIndexToUsers"), "add_index_to_users");
+        assert_eq!(slugify("add index to users"), "add_index_to_users");
+        assert_eq!(slugify("  Add  Index  "), "add_index");
+        assert_eq!(slugify("add-index_to.users"), "add_index_to_users");
+        assert_eq!(slugify("migration"), "migration");
+        assert_eq!(slugify("!!!"), "");
+    }
 }

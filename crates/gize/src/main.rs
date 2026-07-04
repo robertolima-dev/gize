@@ -26,10 +26,9 @@ fn main() -> Result<()> {
                 fields,
                 flags,
             } => commands::make_crud(&name, &fields, flags),
-            MakeCommand::Migration { name, .. } => commands::not_yet(
-                &format!("make migration {}", name.unwrap_or_default()),
-                "generate a timestamped SQL migration file",
-            ),
+            MakeCommand::Migration { name, flags } => {
+                commands::make_migration(name.as_deref(), flags)
+            }
             MakeCommand::Admin { name, .. } => commands::not_yet(
                 &format!("make admin {name}"),
                 "generate an admin UI (List/Create/Edit/Show/Delete) for the model",
@@ -43,7 +42,7 @@ fn main() -> Result<()> {
             "reconcile the project from gize.toml (idempotent, dry-run first)",
         ),
         Command::Doctor => commands::doctor(),
-        Command::Fmt => commands::not_yet("fmt", "run rustfmt across the project"),
-        Command::Check => commands::not_yet("check", "run cargo clippy across the project"),
+        Command::Fmt => commands::fmt(),
+        Command::Check => commands::check(),
     }
 }

@@ -9,4 +9,4 @@ pub mod model;
 pub mod module;
 pub mod project;
 
-pub use model::{migration_sql, model_rs};
+pub use model::{blank_migration_sql, migration_sql, model_rs};

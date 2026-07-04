@@ -51,6 +51,18 @@ CREATE TABLE {table} (
     )
 }
 
+/// Render a blank migration for `gize make migration <name>` (ADR-011: SQL-first, Postgres).
+///
+/// This is the hand-written escape hatch: an empty, timestamped file the developer fills in
+/// (indexes, constraints, data backfills, column changes) — everything the model-driven
+/// `CREATE TABLE` generator does not cover yet.
+pub fn blank_migration_sql(name: &str) -> String {
+    format!(
+        "-- Migration: {name}\n\
+         -- Write your forward schema changes below (SQL-first, Postgres; see ADR-011).\n\n"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +90,12 @@ mod tests {
         assert!(out.contains("CREATE TABLE users"));
         assert!(out.contains("name TEXT NOT NULL"));
         assert!(out.contains("active BOOLEAN NOT NULL"));
+    }
+
+    #[test]
+    fn blank_migration_names_and_is_empty_of_schema() {
+        let out = blank_migration_sql("add_index_to_users");
+        assert!(out.contains("-- Migration: add_index_to_users"));
+        assert!(!out.contains("CREATE TABLE"));
     }
 }
