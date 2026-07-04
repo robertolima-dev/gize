@@ -6,5 +6,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Authentication scaffolding for Gize (Alpha phase)."
+publish = false
 
 [dependencies]

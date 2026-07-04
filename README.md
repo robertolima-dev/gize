@@ -107,7 +107,7 @@ cp target/release/gize /usr/local/bin/   # or add target/release to PATH
 **Once published** (planned for 0.1.0):
 
 ```bash
-cargo install gize-cli   # installs the `gize` binary
+cargo install gize   # installs the `gize` binary
 ```
 
 ### Prerequisites
@@ -425,9 +425,9 @@ Gize is a Cargo workspace ([ADR-001](./ADR/adr-001-workspace.md)). The dependenc
 flows toward a framework-agnostic core:
 
 ```
-gize-cli ──> gize-generator ──> gize-templates ──┐
-   │              │                               ├──> gize-core
-   └──> gize-db ──┴───────────────────────────────┘
+gize ──> gize-generator ──> gize-templates ──┐
+   │           │                              ├──> gize-core
+   └──> gize-db ┴──────────────────────────────┘
 ```
 
 | Crate | Responsibility |
@@ -437,7 +437,7 @@ gize-cli ──> gize-generator ──> gize-templates ──┐
 | `gize-templates` | The templates for generated projects, modules, models, and CRUD. |
 | `gize-db` | Data-layer conventions + the SQLx migration runner. |
 | `gize-macros` | Procedural macros (intentionally tiny — see ADR-007). |
-| `gize-cli` | The `gize` binary (clap). Orchestrates the above. |
+| `gize` | The `gize` binary (clap). Orchestrates the above. |
 | `gize-admin`, `gize-auth`, `gize-openapi`, `gize-testing` | Planned feature crates (placeholders today). |
 
 Design decisions live in [`ADR/`](./ADR); the vision, MVP scope, and roadmap live in

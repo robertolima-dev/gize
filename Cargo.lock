@@ -443,15 +443,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gize-admin"
-version = "0.1.0"
-
-[[package]]
-name = "gize-auth"
-version = "0.1.0"
-
-[[package]]
-name = "gize-cli"
+name = "gize"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -460,6 +452,14 @@ dependencies = [
  "gize-db",
  "gize-generator",
 ]
+
+[[package]]
+name = "gize-admin"
+version = "0.1.0"
+
+[[package]]
+name = "gize-auth"
+version = "0.1.0"
 
 [[package]]
 name = "gize-core"

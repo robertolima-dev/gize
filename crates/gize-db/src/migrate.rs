@@ -3,7 +3,7 @@
 //! We reuse SQLx's `Migrator`, which loads the `migrations/*.sql` files at runtime, tracks
 //! applied versions in its `_sqlx_migrations` table, and applies pending ones in order.
 //! The CLI stays synchronous: these helpers own a small current-thread Tokio runtime and
-//! block on it, so `gize-cli` needs no async plumbing.
+//! block on it, so the `gize` CLI needs no async plumbing.
 
 use std::path::Path;
 

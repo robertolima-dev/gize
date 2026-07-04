@@ -6,5 +6,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Admin UI generator for Gize (Beta phase; see ADR-006)."
+publish = false
 
 [dependencies]

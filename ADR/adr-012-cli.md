@@ -60,11 +60,11 @@ routes). These are logged to the backlog rather than committed now.
 
 - (+) `clap` gives help/validation/completions for free; noun-verb structure scales.
 - (+) Inline model syntax is scriptable and familiar.
-- (−) `clap` derive adds compile time to `gize-cli` (acceptable; it's the CLI, not user code).
+- (−) `clap` derive adds compile time to the `gize` CLI crate (acceptable; it's the CLI, not user code).
 
 ## Consequences
 
-- `gize-cli` defines the clap command tree and delegates to `gize-generator`/`gize-db`.
+- The `gize` crate defines the clap command tree and delegates to `gize-generator`/`gize-db`.
 - The safety flags (`--force`, `--dry-run`) are shared options implemented in the generator,
   not per-command.
 - Backlog UX question on model syntax is resolved: **inline is canonical.**

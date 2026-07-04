@@ -1,5 +1,5 @@
 [package]
-name = "gize-cli"
+name = "gize"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

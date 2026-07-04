@@ -30,7 +30,7 @@ gize-generator   # codegen engine: template rendering + safe file writes
 gize-templates   # the templates for generated projects/resources
 gize-db          # data-layer abstraction (SQLx-based)
 gize-macros       # proc-macros (used sparingly; see ADR-007)
-gize-cli         # the `gize` binary (clap), orchestrates the above
+gize             # the `gize` binary crate (clap), orchestrates the above
 gize-admin       # optional: admin generator (later phase)
 gize-auth        # optional: auth scaffolding (later phase)
 gize-openapi     # optional: OpenAPI generation (later phase)
@@ -39,7 +39,7 @@ gize-testing     # test utilities for generated apps
 
 Plus top-level `examples/`, `docs/`, `website/`, `ADR/`, `README.md`.
 
-**Dependency direction:** `gize-cli` → depends on `gize-generator`, `gize-core`,
+**Dependency direction:** `gize` (the CLI crate) → depends on `gize-generator`, `gize-core`,
 `gize-db`; `gize-generator` → `gize-core`, `gize-templates`. `gize-core` depends on
 nothing framework-specific. Feature crates depend on `gize-core` only. No cycles.
 
