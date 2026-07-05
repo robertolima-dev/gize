@@ -21,15 +21,20 @@ impl From<GenFlags> for Options {
     }
 }
 
-/// A UTC-ish timestamp `YYYYMMDDHHMMSS` for migration filenames. Good enough for ordering
-/// in the MVP; a proper chrono-based stamp lands with the migration diffing work.
+/// A high-resolution, monotonic stamp for migration filenames and sqlx versions.
+///
+/// Nanoseconds since the Unix epoch. Second-resolution stamps collided when two resources
+/// were generated within the same second (two migrations sharing one sqlx version — a
+/// duplicate-key error on `migrate`); nanoseconds make each invocation's stamp distinct.
+/// It also stays strictly greater than any earlier (including second-based, 0.5.0) stamp,
+/// so migration ordering is preserved. A calendar-formatted stamp lands with the
+/// migration-diffing work.
 fn migration_timestamp() -> String {
-    let secs = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
-    // Not calendar-accurate, but monotonic and unique enough for MVP ordering.
-    format!("{secs:014}")
+    format!("{nanos:020}")
 }
 
 /// `gize new <name>` — scaffold a project into a new directory named `name`. Unless
@@ -249,8 +254,10 @@ fn run_cargo(args: &[&str], label: &str) -> Result<()> {
 /// `gize migrate [--status]` — apply pending SQL migrations (ADR-011), or report state.
 pub fn migrate(show_status: bool) -> Result<()> {
     ensure_in_project()?;
-    let database_url = std::env::var("DATABASE_URL")
-        .context("DATABASE_URL must be set, e.g. postgres://user:pass@localhost:5432/dbname")?;
+    let database_url = std::env::var("DATABASE_URL").context(
+        "DATABASE_URL must be set — in your environment or a project `.env` \
+         (e.g. postgres://user:pass@localhost:5432/dbname)",
+    )?;
     let dir = Path::new("migrations");
 
     if show_status {
@@ -312,6 +319,8 @@ pub fn doctor() -> Result<()> {
         "inside a gize project (gize.toml)",
         Path::new("gize.toml").exists(),
     );
+    report("`.env` file present", Path::new(".env").exists());
+    // `.env` is auto-loaded at startup, so this reflects the effective value.
     report("DATABASE_URL set", std::env::var("DATABASE_URL").is_ok());
 
     Ok(())

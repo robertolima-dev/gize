@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+## [0.5.1] - 2026-07-05
+
+### Added
+
+- The CLI now auto-loads a project-local `.env` at startup (via `dotenvy`), so `gize
+  migrate`, `gize serve` and `gize doctor` pick up `DATABASE_URL` / `PORT` without a manual
+  `export`. `serve` spawns `cargo run`, which inherits the loaded values. A real
+  environment variable still takes precedence over a `.env` entry.
+- `gize doctor` reports whether a `.env` file is present.
+
+### Fixed
+
+- Migration timestamps now use nanosecond resolution instead of seconds. Generating two
+  resources within the same second previously produced two migrations with the same sqlx
+  version, which failed `gize migrate` with a `_sqlx_migrations_pkey` duplicate-key error.
+  New stamps stay strictly greater than earlier ones, so ordering is preserved.
+
 ## [0.5.0] - 2026-07-05
 
 ### Added
@@ -60,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_admin` from the `CreateUser` DTO, and register/login endpoints — all pending the
   `gize-auth` work.
 
+[0.5.1]: https://github.com/robertolima-dev/gize/releases/tag/v0.5.1
 [0.5.0]: https://github.com/robertolima-dev/gize/releases/tag/v0.5.0
 [0.4.1]: https://github.com/robertolima-dev/gize/releases/tag/v0.4.1
 [0.4.0]: https://github.com/robertolima-dev/gize/releases/tag/v0.4.0

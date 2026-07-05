@@ -9,6 +9,12 @@ use clap::Parser;
 use cli::{Cli, Command, MakeCommand};
 
 fn main() -> Result<()> {
+    // Load a project-local `.env` (if present) before dispatching, so commands that read
+    // configuration — `migrate`, `serve`, `doctor` — and any child process they spawn
+    // (`serve` runs `cargo run`) see `DATABASE_URL`, `PORT`, etc. without a manual `export`.
+    // A real environment variable always wins over a `.env` entry.
+    let _ = dotenvy::dotenv();
+
     let cli = Cli::parse();
 
     match cli.command {
