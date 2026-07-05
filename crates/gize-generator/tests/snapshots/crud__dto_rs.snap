@@ -1,0 +1,17 @@
+use serde::Deserialize;
+
+/// Payload to create a `Product`.
+#[derive(Debug, Deserialize)]
+pub struct CreateProduct {
+    pub name: String,
+    pub price: i32,
+    pub active: bool,
+}
+
+/// Payload to update a `Product`.
+#[derive(Debug, Deserialize)]
+pub struct UpdateProduct {
+    pub name: String,
+    pub price: i32,
+    pub active: bool,
+}

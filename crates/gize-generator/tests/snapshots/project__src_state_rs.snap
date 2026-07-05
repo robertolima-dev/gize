@@ -1,0 +1,25 @@
+use anyhow::Result;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
+
+/// Shared application state, injected into every handler.
+#[derive(Clone)]
+pub struct AppState {
+    // Read by generated repositories once you add a resource (`gize make crud`).
+    // Allowed to be unused so a freshly scaffolded, model-less app stays clippy-clean.
+    #[allow(dead_code)]
+    pub db: PgPool,
+}
+
+impl AppState {
+    /// Build state from environment variables (12-factor; see ADR-009).
+    pub async fn from_env() -> Result<Self> {
+        let url = std::env::var("DATABASE_URL")
+            .map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
+        let db = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&url)
+            .await?;
+        Ok(Self { db })
+    }
+}

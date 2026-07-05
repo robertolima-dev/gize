@@ -1,0 +1,15 @@
+use axum::Router;
+use axum::routing::get;
+
+use super::handler;
+use crate::state::AppState;
+
+/// Routes for the `products` resource.
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/products", get(handler::list).post(handler::create))
+        .route(
+            "/products/:id",
+            get(handler::show).put(handler::update).delete(handler::delete),
+        )
+}

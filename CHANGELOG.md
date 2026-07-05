@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+## [0.5.0] - 2026-07-05
+
+### Added
+
+- Integration and snapshot test coverage for the generator
+  (`crates/gize-generator/tests/generation.rs`), closing the last MVP Definition of Done
+  item ("covered by integration + snapshot tests in CI"):
+  - Integration tests drive the real `Writer` against a temp directory and assert the
+    generated tree, idempotent re-runs that preserve hand edits, `--force` overwrite and
+    `--dry-run` no-write behavior, and that `make crud` lands a resource with its declared
+    fields.
+  - Snapshot (golden-file) tests pin the generated project skeleton and the full CRUD slice
+    so template changes always surface in review. Refresh with `UPDATE_SNAPSHOTS=1 cargo test`.
+  - Workspace test count: 36 → 42; `cargo clippy --all-targets -- -D warnings` and
+    `cargo fmt --check` stay clean.
+
+### Notes
+
+- This release closes **Phase 1 (MVP)**: the MVP Definition of Done is met end to end.
+  `gize sync` (Alpha) and `gize make admin` (Beta) remain out of MVP scope.
+
 ## [0.4.1] - 2026-07-05
 
 ### Changed
@@ -39,5 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_admin` from the `CreateUser` DTO, and register/login endpoints — all pending the
   `gize-auth` work.
 
+[0.5.0]: https://github.com/robertolima-dev/gize/releases/tag/v0.5.0
 [0.4.1]: https://github.com/robertolima-dev/gize/releases/tag/v0.4.1
 [0.4.0]: https://github.com/robertolima-dev/gize/releases/tag/v0.4.0

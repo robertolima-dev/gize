@@ -1,0 +1,12 @@
+use serde::{Deserialize, Serialize};
+
+/// The `Product` domain model, mapped to the `products` table.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Product {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub price: i32,
+    pub active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}

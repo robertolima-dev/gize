@@ -9,8 +9,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Gate: run the full quality suite (fmt + clippy + test) before anything is published.
+  # A tag with a red build never reaches crates.io.
+  verify:
+    name: verify
+    uses: ./.github/workflows/ci.yml
+
   publish:
     name: publish to crates.io
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

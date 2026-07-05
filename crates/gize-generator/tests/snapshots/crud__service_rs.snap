@@ -1,0 +1,30 @@
+use sqlx::PgPool;
+
+use super::dto::{CreateProduct, UpdateProduct};
+use super::error::Error;
+use super::model::Product;
+use super::repository;
+
+pub async fn list(pool: &PgPool) -> Result<Vec<Product>, Error> {
+    repository::list(pool).await.map_err(Error::from)
+}
+
+pub async fn find(pool: &PgPool, id: uuid::Uuid) -> Result<Product, Error> {
+    repository::find(pool, id).await.map_err(Error::from)
+}
+
+pub async fn create(pool: &PgPool, input: &CreateProduct) -> Result<Product, Error> {
+    repository::create(pool, input).await.map_err(Error::from)
+}
+
+pub async fn update(
+    pool: &PgPool,
+    id: uuid::Uuid,
+    input: &UpdateProduct,
+) -> Result<Product, Error> {
+    repository::update(pool, id, input).await.map_err(Error::from)
+}
+
+pub async fn delete(pool: &PgPool, id: uuid::Uuid) -> Result<(), Error> {
+    repository::delete(pool, id).await.map_err(Error::from)
+}

@@ -1,0 +1,15 @@
+[project]
+name = "shop"
+
+[stack]
+framework = "axum"
+database = "postgres"
+orm = "sqlx"
+
+[features]
+authentication = false
+admin = false
+openapi = false
+
+[modules]
+list = []

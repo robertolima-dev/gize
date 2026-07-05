@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Reusable: the Release workflow calls this as a gate before publishing.
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always
