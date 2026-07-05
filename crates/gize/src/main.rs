@@ -12,7 +12,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::New { name, flags } => commands::new_project(&name, flags),
+        Command::New {
+            name,
+            no_user,
+            flags,
+        } => commands::new_project(&name, no_user, flags),
 
         Command::Make(make) => match make {
             MakeCommand::Model {

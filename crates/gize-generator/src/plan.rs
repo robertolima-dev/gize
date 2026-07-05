@@ -60,6 +60,13 @@ impl Plan {
         self
     }
 
+    /// Append every operation from `other`, preserving order. Used to compose a base plan
+    /// with an optional add-on (e.g. `gize new`'s built-in `users` slice).
+    pub fn extend(mut self, other: Plan) -> Self {
+        self.ops.extend(other.ops);
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }

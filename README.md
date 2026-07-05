@@ -31,6 +31,7 @@ you still have a working, idiomatic Rust codebase.
 - [Quickstart](#quickstart)
 - [Command reference](#command-reference)
 - [The generated project](#the-generated-project)
+- [Built-in `users` resource](#built-in-users-resource)
 - [Models and field types](#models-and-field-types)
 - [Anatomy of a generated CRUD resource](#anatomy-of-a-generated-crud-resource)
 - [The `gize.toml` manifest](#the-gizetoml-manifest)
@@ -77,7 +78,7 @@ PostgreSQL database (create → migrate → serve → CRUD over HTTP).
 
 | Command | State | What it does |
 | --- | --- | --- |
-| `gize new` | ✅ | Scaffold a new project |
+| `gize new` | ✅ | Scaffold a new project (with a built-in `users` resource) |
 | `gize make app` | ✅ | Scaffold a module and wire it in |
 | `gize make model` | ✅ | Generate a model + migration |
 | `gize make crud` | ✅ | Generate a full CRUD resource |
@@ -137,6 +138,11 @@ gize migrate
 gize serve
 ```
 
+> Every new project already ships a **`users` resource** (model, CRUD and a migration with
+> an `is_admin` flag) wired in — so after `gize migrate` you also have working
+> `GET/POST/PUT/DELETE /users` endpoints. Pass `gize new shop --no-user` to skip it. See
+> [Built-in `users` resource](#built-in-users-resource).
+
 Now exercise the API:
 
 ```bash
@@ -170,7 +176,15 @@ Global flags on every **generating** command (`new`, `make …`):
 
 Scaffolds a new project into a directory named `<name>`: `Cargo.toml`, `gize.toml`,
 `.env.example`, `.gitignore`, and the full `src/` layout (see below). The project compiles
-and serves an empty app immediately.
+and serves immediately.
+
+By default it also generates a built-in **`users`** resource — model, full CRUD and a
+migration — already registered in `src/app/mod.rs` and `gize.toml`
+(see [Built-in `users` resource](#built-in-users-resource)).
+
+| Flag | Effect |
+| --- | --- |
+| `--no-user` | Scaffold the bare skeleton, without the built-in `users` resource. |
 
 ### `gize make app <name>`
 
@@ -235,9 +249,11 @@ shop/
 ├── Cargo.toml            # axum, tokio, sqlx, serde, uuid, chrono, tracing
 ├── gize.toml             # the project manifest
 ├── .env.example          # runtime config template
+├── migrations/           # plain SQL migrations (…_create_users.sql ships by default)
 └── src/
     ├── app/
     │   ├── mod.rs        # aggregates modules + merges their routers (has gize: markers)
+    │   ├── users/        # built-in resource (unless --no-user); same layout as below
     │   └── <resource>/   # one directory per resource (added by make app / make crud)
     │       ├── mod.rs        # declares the module's files, re-exports routes
     │       ├── model.rs      # domain struct (sqlx::FromRow)
@@ -260,6 +276,36 @@ shop/
 The `// gize:modules` and `// gize:module-routes` markers in `app/mod.rs` are how `make
 app` / `make crud` wire new modules in without disturbing your code. Leave them in place;
 edit anything else freely.
+
+## Built-in `users` resource
+
+Every project starts with authentication-ready data. Unless you pass `--no-user`, `gize
+new` scaffolds a full `users` resource — the same layered slice `gize make crud` produces —
+and wires it into `src/app/mod.rs` and `gize.toml`. Its migration:
+
+```sql
+-- migrations/…_create_users.sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    is_admin BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+- **`email`** is `UNIQUE`.
+- **`is_admin`** ships from day one as the flag a future admin panel / `gize-auth` can gate
+  access on; it defaults to `false`.
+- **`password`** is marked `#[serde(skip_serializing)]` on the model, so its hash is read
+  from the database but **never serialized into API responses**.
+
+> The `users` resource reuses the generic CRUD templates, so `CreateUser` currently accepts
+> `password` as plain text and lets `is_admin` be set on create. Password hashing, dropping
+> `is_admin` from the create DTO, and register/login endpoints are tracked in
+> [`BACKLOG.md`](./BACKLOG.md) and land with `gize-auth`.
 
 ## Models and field types
 

@@ -32,14 +32,16 @@ fn migration_timestamp() -> String {
     format!("{secs:014}")
 }
 
-/// `gize new <name>` — scaffold a project into a new directory named `name`.
-pub fn new_project(name: &str, flags: GenFlags) -> Result<()> {
+/// `gize new <name>` — scaffold a project into a new directory named `name`. Unless
+/// `no_user` is set, a built-in `users` resource (model, CRUD, migration with an `is_admin`
+/// flag) is generated and wired in.
+pub fn new_project(name: &str, no_user: bool, flags: GenFlags) -> Result<()> {
     let root = Path::new(name);
     if root.exists() && !flags.force {
         bail!("directory `{name}` already exists (use --force to generate into it)");
     }
 
-    let plan = scaffold::new_project(name);
+    let plan = scaffold::new_project(name, !no_user, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(root, &plan)
         .with_context(|| format!("scaffolding project `{name}`"))?;
@@ -49,6 +51,12 @@ pub fn new_project(name: &str, flags: GenFlags) -> Result<()> {
         report.render(flags.dry_run)
     );
     if !flags.dry_run {
+        if !no_user {
+            println!(
+                "\nIncludes a `users` resource (id, name, email, password, is_admin). \
+                 Set DATABASE_URL, then `gize migrate` to create the table."
+            );
+        }
         println!("Next:\n  cd {name}\n  cp .env.example .env\n  gize serve");
     }
     Ok(())

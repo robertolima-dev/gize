@@ -8,5 +8,6 @@ pub mod crud;
 pub mod model;
 pub mod module;
 pub mod project;
+pub mod user;
 
 pub use model::{blank_migration_sql, migration_sql, model_rs};

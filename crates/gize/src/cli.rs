@@ -31,6 +31,9 @@ pub enum Command {
     New {
         /// Project name (also the directory created).
         name: String,
+        /// Skip the built-in `users` resource (model, CRUD and migration).
+        #[arg(long)]
+        no_user: bool,
         #[command(flatten)]
         flags: GenFlags,
     },

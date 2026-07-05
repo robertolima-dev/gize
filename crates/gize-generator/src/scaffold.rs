@@ -3,15 +3,34 @@
 
 use gize_core::naming::table_name;
 use gize_core::{Manifest, ModelSpec};
-use gize_templates::{crud, model, module, project};
+use gize_templates::{crud, model, module, project, user};
 
 use crate::plan::Plan;
+use crate::registry;
 
 /// Plan for `gize new <name>`: a complete, compiling project skeleton (ADR-005).
-pub fn new_project(name: &str) -> Plan {
-    let manifest = Manifest::new(name);
+///
+/// When `with_user` is set (the default), a built-in `users` resource is scaffolded and
+/// wired in — model, CRUD and a migration with an `is_admin` flag — so a fresh project has
+/// authentication-ready data from the start. `timestamp` names the users migration and is
+/// injected (not read from the clock) to keep generation pure and tests deterministic.
+pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
+    let mut manifest = Manifest::new(name);
+    if with_user {
+        manifest.add_module("users");
+    }
 
-    Plan::new()
+    // Pre-wire `users` into app/mod.rs by running the same registry edit `make app` uses,
+    // keeping a single source of truth for the module/route wiring format.
+    let app_mod = if with_user {
+        registry::register_module(&project::app_mod_rs(), "users")
+            .expect("app_mod_rs template carries the gize markers")
+            .content
+    } else {
+        project::app_mod_rs()
+    };
+
+    let plan = Plan::new()
         .create("Cargo.toml", project::cargo_toml(name))
         .create("gize.toml", project::gize_toml(&manifest))
         .create(".env.example", project::env_example(name))
@@ -20,12 +39,40 @@ pub fn new_project(name: &str) -> Plan {
         .create("src/state.rs", project::state_rs())
         .create("src/router.rs", project::router_rs())
         .create("src/config/mod.rs", project::config_mod_rs())
-        .create("src/app/mod.rs", project::app_mod_rs())
+        .create("src/app/mod.rs", app_mod)
         // Layout directories reserved by ADR-005 so the tree does not churn later.
         .mkdir("src/database")
         .mkdir("src/middleware")
         .mkdir("src/shared")
-        .mkdir("migrations")
+        .mkdir("migrations");
+
+    if with_user {
+        plan.extend(user_slice(timestamp))
+    } else {
+        plan
+    }
+}
+
+/// The built-in `users` vertical slice for a fresh project: the generic CRUD templates plus
+/// a password-hiding model and a users migration with an `is_admin` flag (see [`user`]).
+fn user_slice(timestamp: &str) -> Plan {
+    let model = user::spec();
+    let dir = "src/app/users";
+
+    Plan::new()
+        .create(format!("{dir}/mod.rs"), crud::mod_rs(&model))
+        .create(format!("{dir}/model.rs"), user::model_rs())
+        .create(format!("{dir}/dto.rs"), crud::dto_rs(&model))
+        .create(format!("{dir}/error.rs"), crud::error_rs(&model))
+        .create(format!("{dir}/repository.rs"), crud::repository_rs(&model))
+        .create(format!("{dir}/service.rs"), crud::service_rs(&model))
+        .create(format!("{dir}/handler.rs"), crud::handler_rs(&model))
+        .create(format!("{dir}/routes.rs"), crud::routes_rs(&model))
+        .create(format!("{dir}/tests.rs"), crud::tests_rs(&model))
+        .create(
+            format!("migrations/{timestamp}_create_users.sql"),
+            user::migration_sql(),
+        )
 }
 
 /// Plan for `gize make app <name>`: a full, compiling module skeleton (ADR-005).
@@ -107,18 +154,63 @@ pub fn make_migration(name: &str, timestamp: &str) -> Plan {
 mod tests {
     use super::*;
 
-    #[test]
-    fn new_project_plan_includes_core_files() {
-        let plan = new_project("shop");
-        let paths: Vec<_> = plan
-            .ops
+    fn paths_of(plan: &Plan) -> Vec<String> {
+        plan.ops
             .iter()
             .map(|o| o.path.display().to_string())
-            .collect();
+            .collect()
+    }
+
+    fn content_of<'a>(plan: &'a Plan, path: &str) -> &'a str {
+        plan.ops
+            .iter()
+            .find(|o| o.path.display().to_string() == path)
+            .map(|o| o.contents.as_str())
+            .unwrap_or_else(|| panic!("plan has no op for {path}"))
+    }
+
+    #[test]
+    fn new_project_plan_includes_core_files() {
+        let plan = new_project("shop", false, "20260704120000");
+        let paths = paths_of(&plan);
         assert!(paths.contains(&"Cargo.toml".to_string()));
         assert!(paths.contains(&"gize.toml".to_string()));
         assert!(paths.contains(&"src/main.rs".to_string()));
         assert!(paths.contains(&"src/app/mod.rs".to_string()));
+    }
+
+    #[test]
+    fn new_project_without_user_omits_users_slice() {
+        let plan = new_project("shop", false, "20260704120000");
+        let paths = paths_of(&plan);
+        assert!(!paths.iter().any(|p| p.starts_with("src/app/users/")));
+        assert!(!paths.iter().any(|p| p.ends_with("_create_users.sql")));
+        // app/mod.rs and gize.toml stay empty of the users module.
+        assert!(!content_of(&plan, "src/app/mod.rs").contains("mod users;"));
+        assert!(!content_of(&plan, "gize.toml").contains("users"));
+    }
+
+    #[test]
+    fn new_project_scaffolds_and_wires_users_by_default() {
+        let plan = new_project("shop", true, "20260704120000");
+        let paths = paths_of(&plan);
+        for file in ["mod.rs", "model.rs", "dto.rs", "repository.rs", "routes.rs"] {
+            assert!(
+                paths.contains(&format!("src/app/users/{file}")),
+                "missing users/{file}"
+            );
+        }
+        assert!(paths.contains(&"migrations/20260704120000_create_users.sql".to_string()));
+
+        // The users module is wired into app/mod.rs and listed in gize.toml.
+        let app_mod = content_of(&plan, "src/app/mod.rs");
+        assert!(app_mod.contains("mod users;"));
+        assert!(app_mod.contains(".merge(users::routes())"));
+        assert!(content_of(&plan, "gize.toml").contains("users"));
+
+        // The migration carries the admin flag and hides nothing schema-wise.
+        let migration = content_of(&plan, "migrations/20260704120000_create_users.sql");
+        assert!(migration.contains("is_admin BOOLEAN NOT NULL DEFAULT false"));
     }
 
     #[test]
