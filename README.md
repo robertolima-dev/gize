@@ -4,7 +4,7 @@
 
 **Productivity-first backend framework for Rust.**
 
-Django-like velocity — scaffolding, conventions, generators, migrations —
+Django-like velocity (scaffolding, conventions, generators, migrations)
 without giving up Rust's guarantees, performance, or transparency.
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
@@ -13,10 +13,10 @@ without giving up Rust's guarantees, performance, or transparency.
 
 </div>
 
-> The name comes from the plateau of the Great Pyramids — solid foundations meant to last.
+> The name comes from the plateau of the Great Pyramids: solid foundations meant to last.
 
 Gize lets you go from an empty directory to a running, production-shaped CRUD API in
-minutes. It generates **idiomatic Rust you own** — plain Axum handlers, plain SQLx
+minutes. It generates **idiomatic Rust you own**: plain Axum handlers, plain SQLx
 queries, plain SQL migrations. No hidden runtime, no reflection, no magic. Delete Gize and
 you still have a working, idiomatic Rust codebase.
 
@@ -49,7 +49,7 @@ you still have a working, idiomatic Rust codebase.
 
 ## Why Gize?
 
-Rust is excellent for backends — fast, safe, predictable — but **starting** a real project
+Rust is excellent for backends (fast, safe, predictable) but **starting** a real project
 is slow. There is no blessed layout, no scaffolding, no generators. Every team hand-wires a
 router, a database pool, config, migrations, error handling, and repeats the
 model → migration → repository → service → DTO → handler → routes → tests dance for every
@@ -57,14 +57,14 @@ resource.
 
 Gize removes that day-one tax. One command scaffolds the project; one command generates a
 full CRUD resource wired end-to-end; one command applies migrations; one command runs it.
-What you get is normal Rust you can read and edit — Gize writes the boring 80%, you own
+What you get is normal Rust you can read and edit: Gize writes the boring 80%, you own
 100%.
 
 ## Philosophy
 
 - **Zero-cost abstractions.** Generated code is idiomatic and explicit.
 - **No magic.** No hidden framework runtime; everything is a file you can read and diff.
-- **You own the code.** Gize is an accelerator, not a cage — remove it and the app still
+- **You own the code.** Gize is an accelerator, not a cage: remove it and the app still
   works.
 - **No unnecessary dependencies.** Every dependency is justified in an ADR.
 - **Convention over configuration**, but customization is always possible.
@@ -139,7 +139,7 @@ gize serve
 ```
 
 > Every new project already ships a **`users` resource** (model, CRUD and a migration with
-> an `is_admin` flag) wired in — so after `gize migrate` you also have working
+> an `is_admin` flag) wired in, so after `gize migrate` you also have working
 > `GET/POST/PUT/DELETE /users` endpoints. Pass `gize new shop --no-user` to skip it. See
 > [Built-in `users` resource](#built-in-users-resource).
 
@@ -160,7 +160,7 @@ curl -X PUT localhost:8080/products/<id> \
 curl -X DELETE localhost:8080/products/<id>            # delete → 204
 ```
 
-Deleting a missing id returns `404` — the generated typed error maps `RowNotFound` to
+Deleting a missing id returns `404`: the generated typed error maps `RowNotFound` to
 `NOT_FOUND` for you.
 
 ## Command reference
@@ -178,8 +178,8 @@ Scaffolds a new project into a directory named `<name>`: `Cargo.toml`, `gize.tom
 `.env.example`, `.gitignore`, and the full `src/` layout (see below). The project compiles
 and serves immediately.
 
-By default it also generates a built-in **`users`** resource — model, full CRUD and a
-migration — already registered in `src/app/mod.rs` and `gize.toml`
+By default it also generates a built-in **`users`** resource (model, full CRUD and a
+migration) already registered in `src/app/mod.rs` and `gize.toml`
 (see [Built-in `users` resource](#built-in-users-resource)).
 
 | Flag | Effect |
@@ -188,7 +188,7 @@ migration — already registered in `src/app/mod.rs` and `gize.toml`
 
 ### `gize make app <name>`
 
-Scaffolds an application module `<name>` — the nine files of the module layout — with a
+Scaffolds an application module `<name>` (the nine files of the module layout) with a
 placeholder health route, then **registers it idempotently**: adds `mod <name>;` and
 `.merge(<name>::routes())` to `src/app/mod.rs` and appends it to `[modules]` in
 `gize.toml`. Re-running is a no-op.
@@ -222,7 +222,7 @@ gize make crud Article title:String body:String published:bool --dry-run
 ### `gize migrate [--status]`
 
 Applies pending migrations from `migrations/*.sql` against `DATABASE_URL`, using SQLx's
-migrator (tracked in the `_sqlx_migrations` table — ordered and idempotent).
+migrator (tracked in the `_sqlx_migrations` table, ordered and idempotent).
 
 ```bash
 gize migrate            # apply all pending
@@ -280,7 +280,7 @@ edit anything else freely.
 ## Built-in `users` resource
 
 Every project starts with authentication-ready data. Unless you pass `--no-user`, `gize
-new` scaffolds a full `users` resource — the same layered slice `gize make crud` produces —
+new` scaffolds a full `users` resource (the same layered slice `gize make crud` produces)
 and wires it into `src/app/mod.rs` and `gize.toml`. Its migration:
 
 ```sql
@@ -320,7 +320,7 @@ Fields are given inline as `name:Type` (the canonical UX per
 | `i32` | `int` | `i32` | `INTEGER` |
 | `i64` | `bigint`, `long` | `i64` | `BIGINT` |
 | `f64` | `float`, `double` | `f64` | `DOUBLE PRECISION` |
-| `Uuid` | — | `uuid::Uuid` | `UUID` |
+| `Uuid` | (none) | `uuid::Uuid` | `UUID` |
 | `DateTime` | `timestamp` | `chrono::DateTime<Utc>` | `TIMESTAMPTZ` |
 
 Types are case-insensitive. Unknown types are rejected early with a helpful message.
@@ -343,7 +343,7 @@ pub struct Product {
 }
 ```
 
-**`repository.rs`** (SQLx runtime queries — compile without a database connection)
+**`repository.rs`** (SQLx runtime queries, compile without a database connection)
 ```rust
 pub async fn create(pool: &PgPool, input: &CreateProduct) -> Result<Product, sqlx::Error> {
     sqlx::query_as::<_, Product>(
@@ -381,7 +381,7 @@ impl IntoResponse for Error {
 }
 ```
 
-No macros hide any of this — it is exactly what you would write by hand
+No macros hide any of this: it is exactly what you would write by hand
 ([ADR-007](./ADR/adr-007-macros.md) explains why Gize prefers generated source over
 proc-macros).
 
@@ -389,7 +389,7 @@ proc-macros).
 
 The declarative source of truth for a project's shape ([ADR-009](./ADR/adr-009-configuration.md)).
 It drives the (planned) `gize sync` and is updated automatically by `make app` / `make
-crud`. It never holds secrets — those live in the environment.
+crud`. It never holds secrets: those live in the environment.
 
 ```toml
 [project]
@@ -413,7 +413,7 @@ list = ["orders", "products"]
 
 - Migrations are **plain SQL** files in `migrations/`, named
   `<version>_create_<table>.sql` ([ADR-011](./ADR/adr-011-migrations.md)).
-- `gize make model` / `gize make crud` derive a `CREATE TABLE` from the model's fields —
+- `gize make model` / `gize make crud` derive a `CREATE TABLE` from the model's fields;
   review and edit the SQL before applying.
 - `gize migrate` applies them via the SQLx migrator, which records applied versions in
   `_sqlx_migrations` (ordered, idempotent). There is **no** risky runtime auto-migration.
@@ -440,7 +440,7 @@ Generated apps are 12-factor: runtime config comes from **environment variables*
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | — (required) | PostgreSQL connection string |
+| `DATABASE_URL` | (required) | PostgreSQL connection string |
 | `PORT` | `8080` | HTTP listen port |
 
 `gize new` writes a `.env.example` you can copy to `.env` for local development.
@@ -451,13 +451,13 @@ Generators never destroy your work ([ADR-012](./ADR/adr-012-cli.md)):
 
 - Existing files are **skipped** unless you pass `--force`.
 - `--dry-run` shows the full plan (`create` / `skip` / `update`) and writes nothing.
-- Registry edits to `app/mod.rs` and `gize.toml` are **idempotent** — re-running a
+- Registry edits to `app/mod.rs` and `gize.toml` are **idempotent**: re-running a
   generator does not duplicate anything.
 
 ```text
 $ gize make crud Product name:String price:i32 --dry-run
 Generated CRUD for `Product`:
-dry-run — no files written
+dry-run: no files written
   create  src/app/products/mod.rs
   create  src/app/products/model.rs
   …
@@ -482,7 +482,7 @@ gize ──> gize-generator ──> gize-templates ──┐
 | `gize-generator` | Codegen engine: pure `Plan`s, the safe `Writer`, idempotent registry edits. |
 | `gize-templates` | The templates for generated projects, modules, models, and CRUD. |
 | `gize-db` | Data-layer conventions + the SQLx migration runner. |
-| `gize-macros` | Procedural macros (intentionally tiny — see ADR-007). |
+| `gize-macros` | Procedural macros (intentionally tiny; see ADR-007). |
 | `gize` | The `gize` binary (clap). Orchestrates the above. |
 | `gize-admin`, `gize-auth`, `gize-openapi`, `gize-testing` | Planned feature crates (placeholders today). |
 
@@ -512,11 +512,11 @@ Full detail with acceptance criteria in [`docs/roadmap.md`](./docs/roadmap.md).
 
 ## Comparison
 
-- **vs. Django / Rails / Laravel** — the same generator/convention productivity, but
+- **vs. Django / Rails / Laravel**: the same generator/convention productivity, but
   compiled, type-safe, and with generated code you can read.
-- **vs. plain Axum** — Gize *uses* Axum; it adds the layout, scaffolding, and ecosystem
+- **vs. plain Axum**: Gize *uses* Axum; it adds the layout, scaffolding, and ecosystem
   Axum leaves to you. You still ship plain Axum code.
-- **vs. Loco** — a different bet: transparent generated code over a heavy framework runtime,
+- **vs. Loco**: a different bet: transparent generated code over a heavy framework runtime,
   and SQLx-first over an ORM.
 
 See [`docs/vision.md`](./docs/vision.md) for the detailed comparison.
@@ -524,7 +524,7 @@ See [`docs/vision.md`](./docs/vision.md) for the detailed comparison.
 ## Contributing
 
 Contributions are welcome. Because Gize is decision-driven, please open an ADR (or discuss
-one) for anything architectural before implementing — see
+one) for anything architectural before implementing; see
 [ADR-000](./ADR/adr-000-process.md) for the process. Keep `cargo fmt`, `cargo clippy -D
 warnings`, and `cargo test` green.
 

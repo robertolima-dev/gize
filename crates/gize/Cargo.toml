@@ -5,10 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "The Gize command-line interface — productivity-first backend framework for Rust."
+description = "The Gize command-line interface: productivity-first backend framework for Rust."
 keywords = ["web", "framework", "codegen", "cli", "scaffolding"]
 categories = ["command-line-utilities", "web-programming", "development-tools"]
-homepage = "https://github.com/robertolima-dev/gize"
+homepage = "https://gize-rust-framework.vercel.app/en"
 
 [[bin]]
 name = "gize"

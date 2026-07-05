@@ -38,7 +38,7 @@ impl Report {
         }
         let mut out = String::new();
         if dry_run {
-            out.push_str("dry-run — no files written\n");
+            out.push_str("dry-run: no files written\n");
         }
         for p in &self.created {
             out.push_str(&format!("  create  {p}\n"));
