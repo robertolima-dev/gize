@@ -8,5 +8,5 @@ pub mod field;
 pub mod manifest;
 pub mod naming;
 
-pub use field::{Field, FieldType, ModelSpec};
-pub use manifest::Manifest;
+pub use field::{Field, FieldType, ModelSpec, Relation};
+pub use manifest::{Manifest, Module};

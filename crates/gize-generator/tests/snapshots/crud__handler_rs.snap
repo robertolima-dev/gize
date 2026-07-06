@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use validator::Validate;
 
 use super::dto::{CreateProduct, UpdateProduct};
 use super::error::Error;
@@ -25,6 +26,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(input): Json<CreateProduct>,
 ) -> Result<(StatusCode, Json<Product>), Error> {
+    input.validate()?;
     let item = service::create(&state.db, &input).await?;
     Ok((StatusCode::CREATED, Json(item)))
 }
@@ -34,6 +36,7 @@ pub async fn update(
     Path(id): Path<uuid::Uuid>,
     Json(input): Json<UpdateProduct>,
 ) -> Result<Json<Product>, Error> {
+    input.validate()?;
     let item = service::update(&state.db, id, &input).await?;
     Ok(Json(item))
 }

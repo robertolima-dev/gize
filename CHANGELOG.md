@@ -6,7 +6,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
-## [0.5.1] - 2026-07-05
+## [Unreleased] — Alpha phase
+
+Work toward the Alpha (see `docs/roadmap.md`). ADR-before-code: ADR-009 and ADR-011 revised;
+ADR-013 (auth) and ADR-014 (relationships) added.
+
+### Added
+
+- **Request validation and richer error mapping** in generated resources. DTOs now derive
+  `validator::Validate`: `String` fields must be non-empty, and the `users` DTOs validate
+  email format and a minimum password length. Handlers validate the payload before touching
+  the database, returning **422 Unprocessable Entity** with a readable message. The resource
+  error type gained `Conflict` and `Validation` variants, and a Postgres unique violation
+  (SQLSTATE 23505, e.g. a duplicate email) now maps to **409 Conflict** instead of a generic
+  500. Verified end-to-end: invalid email / short password → 422, duplicate email → 409.
+- **Authentication, generated into every project** (ADR-013). `gize new` now emits a
+  `src/auth` module with Argon2id password hashing and stateless JWT (HS256): `hash_password`
+  / `verify_password`, `issue_token` / `verify_token`, and a `require_auth` middleware.
+  Mutating routes (`POST`/`PUT`/`DELETE`) are guarded; reads stay public. The built-in `users`
+  resource gains public `POST /users/register` and `POST /users/login` (returning a token) and
+  hashes the password on every write. The signing secret is read from `GIZE_JWT_SECRET` (added
+  to `.env.example`, reported by `gize doctor`) — never from `gize.toml`. Verified end-to-end
+  against Postgres: guarded routes return 401 without a token and 201 with one; login rejects
+  bad credentials; passwords never appear in responses. A security review (recorded in
+  ADR-013) fixed a privilege-escalation where `register` accepted `is_admin`.
+- **`belongs_to` relationships** in models (ADR-014). Declare a foreign key with a field
+  token: `gize make crud Post title:String author:belongs_to:users`. The generated migration
+  gets an `author_id UUID NOT NULL` column plus a `FOREIGN KEY (author_id) REFERENCES
+  users(id)` constraint, and the model/DTOs carry `author_id`. Relationships are recorded
+  under `[[module.belongs_to]]` in `gize.toml`, so `gize sync` rebuilds them; `sync` creates
+  migrations in dependency order (a target table before the table that references it) and
+  errors on a relationship cycle. Only `belongs_to`/one-to-many is supported in the Alpha; the
+  reverse side is a plain query, and many-to-many is deferred.
+- **`gize make migration` model diffing** (ADR-011). With no name, it now diffs each module's
+  declared fields (`gize.toml`) against the columns in that table's existing migrations and
+  emits `ALTER TABLE` migrations to reconcile. New columns are added automatically (as
+  **nullable**, with a `-- TODO` to backfill and tighten — adding a `NOT NULL` column to a
+  populated table would fail); dropped columns are **withheld** and only emitted with
+  `--force` (a rename is indistinguishable from drop+add, so it is always surfaced for
+  review). Column parsing reads only Gize's own generated SQL and never touches a database.
+  Passing a name still generates a blank migration to edit by hand.
+- **`gize sync`** — reconcile a project from `gize.toml` (ADR-009). It regenerates any
+  declared module whose code is missing, creates a `CREATE TABLE` migration for any table
+  that lacks one (idempotent — never spawns duplicates), and wires each module into
+  `src/app/mod.rs`. Files that exist but differ from the manifest are reported as **drift**
+  and left untouched unless `--force` is given; `--dry-run` previews without writing. This
+  makes the manifest-driven workflow real: add a `[[module]]` block by hand (or clone a repo
+  with only `gize.toml`) and `gize sync` scaffolds and wires the module. Generation goes
+  through one shared code path (`scaffold::module_code`) with `gize new`/`make crud`, so a
+  synced tree is byte-identical and drift-free.
+
+### Changed
+
+- **`gize.toml` is now a rich, per-module source of truth** (ADR-009 revision). Each module
+  records its `fields` (the same `name:Type` grammar the CLI accepts) under `[[module]]`, so
+  a project can be reconciled and rebuilt from the manifest alone. `gize new` and `gize make
+  crud` write the module's full shape; the built-in `users` module records its fields too.
+  The legacy names-only form (`[modules] list = [...]`) is still read for backward
+  compatibility and upgraded to `[[module]]` on the next write.
+
+
 
 ### Added
 

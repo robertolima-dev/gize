@@ -1,6 +1,6 @@
 # ADR-009: Configuration & the gize.toml manifest
 
-- **Status:** Accepted
+- **Status:** Accepted (revised 2026-07-06 for the Alpha phase — see "Revision")
 - **Date:** 2026-07-04
 - **Deciders:** Gize core team
 
@@ -72,3 +72,44 @@ never live in `gize.toml`.
 - `gize-core` defines the manifest schema + validation.
 - `gize new` writes an initial `gize.toml`; `gize make ...` updates the `[modules]` list.
 - Generated `src/config/` reads env vars; `.env.example` is generated for onboarding.
+
+## Revision (Alpha) — the manifest becomes a rich, per-module source of truth
+
+The MVP manifest stored modules as bare names (`[modules] list = ["users", "products"]`).
+That is enough to record *presence*, but the Alpha acceptance criterion requires the app to
+be **rebuilt from scratch reproducibly** from the manifest, and `gize sync` /
+migration-diffing need each module's **fields** and **relationships**. Bare names cannot
+carry that, and recovering it by parsing generated Rust is fragile and rejected.
+
+The manifest therefore captures each module's shape declaratively:
+
+```toml
+[project]
+name = "blog"
+
+[[module]]
+name = "users"
+fields = ["name:String", "email:String", "password:String", "is_admin:bool"]
+
+[[module]]
+name = "posts"
+fields = ["title:String", "body:String", "published:bool"]
+
+  [[module.belongs_to]]
+  target = "users"   # emits an author_id FK column -> users(id); see ADR-014
+```
+
+- **Fields** reuse the exact `name:Type` grammar the CLI already parses (`gize-core::field`),
+  so the manifest and the command line share one definition of a model.
+- **`belongs_to`** records 1-N relationships (ADR-014); the referenced module must also be in
+  the manifest (validated on load).
+- **Backward compatibility:** the loader still accepts the legacy `[modules] list = [...]`
+  form (each name becomes a module with no fields) and rewrites into the new `[[module]]`
+  form on the next write. A project generated before this revision keeps working; the first
+  `gize make ...`/`gize sync` migrates its manifest.
+- **`gize.toml` stays the single source of truth.** `gize new`/`make ...` write module shape
+  into it; `gize sync` reads it to reconcile the tree; migration-diffing reads it to compute
+  schema deltas. No sidecar/lock file — one file a human can read and edit.
+
+This makes the manifest, not the generated source, authoritative for *what the app is*, which
+is what "reproducible rebuild" demands.

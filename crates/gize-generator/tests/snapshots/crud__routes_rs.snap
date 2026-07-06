@@ -1,15 +1,23 @@
-use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
+use axum::{middleware, Router};
 
 use super::handler;
+use crate::auth::require_auth;
 use crate::state::AppState;
 
-/// Routes for the `products` resource.
+/// Routes for the `products` resource. Mutating routes require a valid bearer token.
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/products", get(handler::list).post(handler::create))
+    let public = Router::new()
+        .route("/products", get(handler::list))
+        .route("/products/:id", get(handler::show));
+
+    let protected = Router::new()
+        .route("/products", post(handler::create))
         .route(
             "/products/:id",
-            get(handler::show).put(handler::update).delete(handler::delete),
+            axum::routing::put(handler::update).delete(handler::delete),
         )
+        .route_layer(middleware::from_fn(require_auth));
+
+    public.merge(protected)
 }

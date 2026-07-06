@@ -1,12 +1,74 @@
 //! High-level generators. Each returns a pure [`Plan`]; applying it is the [`Writer`]'s
 //! job. This separation keeps generation testable and makes `--dry-run` free.
 
+use anyhow::Result;
 use gize_core::naming::table_name;
-use gize_core::{Manifest, ModelSpec};
-use gize_templates::{crud, model, module, project, user};
+use gize_core::{Manifest, ModelSpec, Module};
+use gize_templates::{auth, crud, model, module, project, user};
 
 use crate::plan::Plan;
 use crate::registry;
+
+/// The nine code files of a CRUD vertical slice (everything but the migration), shared by
+/// `gize new`'s built-in users slice, `gize make crud`, and `gize sync` so all three paths
+/// emit byte-identical code. When `is_user` is set, the password-hiding `model.rs` is used.
+fn crud_files(model: &ModelSpec, dir: &str, is_user: bool) -> Plan {
+    // The users slice customizes the files that auth touches (password-hiding model, hashing
+    // handlers, register/login routes, an error type with `Unauthorized`); everything else is
+    // the generic CRUD template. See `gize_templates::user`.
+    let (model_rs, dto_rs, error_rs, handler_rs, routes_rs) = if is_user {
+        (
+            user::model_rs(),
+            user::dto_rs(),
+            user::error_rs(),
+            user::handler_rs(),
+            user::routes_rs(),
+        )
+    } else {
+        (
+            model::model_rs(model),
+            crud::dto_rs(model),
+            crud::error_rs(model),
+            crud::handler_rs(model),
+            crud::routes_rs(model),
+        )
+    };
+    Plan::new()
+        .create(format!("{dir}/mod.rs"), crud::mod_rs(model))
+        .create(format!("{dir}/model.rs"), model_rs)
+        .create(format!("{dir}/dto.rs"), dto_rs)
+        .create(format!("{dir}/error.rs"), error_rs)
+        .create(format!("{dir}/repository.rs"), crud::repository_rs(model))
+        .create(format!("{dir}/service.rs"), crud::service_rs(model))
+        .create(format!("{dir}/handler.rs"), handler_rs)
+        .create(format!("{dir}/routes.rs"), routes_rs)
+        .create(format!("{dir}/tests.rs"), crud::tests_rs(model))
+}
+
+/// The generated `src/auth/mod.rs` skeleton (ADR-013), so `gize sync` can reconcile the auth
+/// module that the CRUD routes depend on.
+pub fn auth_mod_rs() -> String {
+    auth::mod_rs()
+}
+
+/// The code files (no migration) for a module reconstructed from its manifest entry, for
+/// `gize sync` (ADR-009 revision). The built-in `users` module keeps its special `model.rs`.
+pub fn module_code(module: &Module) -> Result<Plan> {
+    let model = module.model_spec()?;
+    let dir = format!("src/app/{}", module.name);
+    Ok(crud_files(&model, &dir, module.name == "users"))
+}
+
+/// The `CREATE TABLE` migration SQL for a module reconstructed from its manifest entry. The
+/// built-in `users` table keeps its special migration (`email UNIQUE`, `is_admin` default).
+pub fn module_migration_sql(module: &Module) -> Result<String> {
+    let model = module.model_spec()?;
+    Ok(if module.name == "users" {
+        user::migration_sql()
+    } else {
+        model::migration_sql(&model)
+    })
+}
 
 /// Plan for `gize new <name>`: a complete, compiling project skeleton (ADR-005).
 ///
@@ -16,8 +78,17 @@ use crate::registry;
 /// injected (not read from the clock) to keep generation pure and tests deterministic.
 pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
     let mut manifest = Manifest::new(name);
+    // Auth is generated for every project (ADR-013): the `src/auth` module is emitted below
+    // and write routes are guarded, so the manifest reflects it.
+    manifest.features.authentication = true;
     if with_user {
-        manifest.add_module("users");
+        // Record the built-in users module with its full shape so `gize sync` can
+        // reconcile/rebuild it from the manifest alone (ADR-009 revision).
+        manifest.upsert_module(Module {
+            name: "users".to_string(),
+            fields: user::spec().to_field_tokens(),
+            belongs_to: Vec::new(),
+        });
     }
 
     // Pre-wire `users` into app/mod.rs by running the same registry edit `make app` uses,
@@ -39,6 +110,7 @@ pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
         .create("src/state.rs", project::state_rs())
         .create("src/router.rs", project::router_rs())
         .create("src/config/mod.rs", project::config_mod_rs())
+        .create("src/auth/mod.rs", auth::mod_rs())
         .create("src/app/mod.rs", app_mod)
         // Layout directories reserved by ADR-005 so the tree does not churn later.
         .mkdir("src/database")
@@ -56,23 +128,10 @@ pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
 /// The built-in `users` vertical slice for a fresh project: the generic CRUD templates plus
 /// a password-hiding model and a users migration with an `is_admin` flag (see [`user`]).
 fn user_slice(timestamp: &str) -> Plan {
-    let model = user::spec();
-    let dir = "src/app/users";
-
-    Plan::new()
-        .create(format!("{dir}/mod.rs"), crud::mod_rs(&model))
-        .create(format!("{dir}/model.rs"), user::model_rs())
-        .create(format!("{dir}/dto.rs"), crud::dto_rs(&model))
-        .create(format!("{dir}/error.rs"), crud::error_rs(&model))
-        .create(format!("{dir}/repository.rs"), crud::repository_rs(&model))
-        .create(format!("{dir}/service.rs"), crud::service_rs(&model))
-        .create(format!("{dir}/handler.rs"), crud::handler_rs(&model))
-        .create(format!("{dir}/routes.rs"), crud::routes_rs(&model))
-        .create(format!("{dir}/tests.rs"), crud::tests_rs(&model))
-        .create(
-            format!("migrations/{timestamp}_create_users.sql"),
-            user::migration_sql(),
-        )
+    crud_files(&user::spec(), "src/app/users", true).create(
+        format!("migrations/{timestamp}_create_users.sql"),
+        user::migration_sql(),
+    )
 }
 
 /// Plan for `gize make app <name>`: a full, compiling module skeleton (ADR-005).
@@ -124,20 +183,10 @@ pub fn make_crud(model: &ModelSpec, timestamp: &str) -> Plan {
     let table = table_name(&model.name);
     let dir = format!("src/app/{table}");
 
-    Plan::new()
-        .create(format!("{dir}/mod.rs"), crud::mod_rs(model))
-        .create(format!("{dir}/model.rs"), model::model_rs(model))
-        .create(format!("{dir}/dto.rs"), crud::dto_rs(model))
-        .create(format!("{dir}/error.rs"), crud::error_rs(model))
-        .create(format!("{dir}/repository.rs"), crud::repository_rs(model))
-        .create(format!("{dir}/service.rs"), crud::service_rs(model))
-        .create(format!("{dir}/handler.rs"), crud::handler_rs(model))
-        .create(format!("{dir}/routes.rs"), crud::routes_rs(model))
-        .create(format!("{dir}/tests.rs"), crud::tests_rs(model))
-        .create(
-            format!("migrations/{timestamp}_create_{table}.sql"),
-            model::migration_sql(model),
-        )
+    crud_files(model, &dir, false).create(
+        format!("migrations/{timestamp}_create_{table}.sql"),
+        model::migration_sql(model),
+    )
 }
 
 /// Plan for `gize make migration <name>`: a single blank, timestamped SQL file the developer

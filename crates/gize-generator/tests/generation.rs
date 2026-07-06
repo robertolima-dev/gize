@@ -267,3 +267,126 @@ fn crud_slice_matches_snapshots() {
         content(&plan, &format!("migrations/{TS}_create_products.sql")),
     );
 }
+
+// --------------------------------------------------------------------------------------
+// Integration: `gize sync` reconciliation from the manifest (ADR-009)
+// --------------------------------------------------------------------------------------
+
+/// The desired code plan for every module in a project's `gize.toml`, mirroring what the
+/// `gize sync` command builds (code files only; migrations are handled by the command).
+fn desired_code_plan(root: &Path) -> Plan {
+    let text = fs::read_to_string(root.join("gize.toml")).expect("read gize.toml");
+    let manifest = gize_core::Manifest::from_toml(&text).expect("parse manifest");
+    let mut plan = Plan::new();
+    for module in &manifest.modules {
+        plan = plan.extend(scaffold::module_code(module).expect("plan module code"));
+    }
+    plan
+}
+
+#[test]
+fn sync_rebuilds_a_deleted_module_from_the_manifest() {
+    let root = unique_tmpdir();
+    // A project with the built-in users plus a Product CRUD, both recorded in gize.toml.
+    apply(
+        &root,
+        &scaffold::new_project("shop", true, TS),
+        Options::default(),
+    );
+    apply(
+        &root,
+        &scaffold::make_crud(&product_model(), TS),
+        Options::default(),
+    );
+    // make_crud records the module shape the way the CLI does.
+    record_products_in_manifest(&root);
+
+    // Simulate a checkout that has the manifest but lost the module's code.
+    fs::remove_dir_all(root.join("src/app/products")).unwrap();
+    assert!(!root.join("src/app/products/model.rs").exists());
+
+    // Reconcile from the manifest.
+    let plan = desired_code_plan(&root);
+    let recon = gize_generator::sync::reconcile(&root, &plan).unwrap();
+    // users (9 files) are untouched; products (9 files) are missing.
+    assert_eq!(recon.unchanged.len(), 9, "users slice should already match");
+    assert_eq!(recon.missing.len(), 9, "products slice should be missing");
+    assert!(recon.drift.is_empty(), "nothing should have drifted");
+
+    let applied = gize_generator::sync::apply(&root, &recon, false, false).unwrap();
+    assert_eq!(applied.created.len(), 9);
+    assert!(root.join("src/app/products/model.rs").is_file());
+
+    // A second reconcile is a no-op: the tree matches the manifest exactly.
+    let recon2 = gize_generator::sync::reconcile(&root, &desired_code_plan(&root)).unwrap();
+    assert!(recon2.is_in_sync(), "re-running sync should be idempotent");
+    assert_eq!(recon2.unchanged.len(), 18);
+}
+
+#[test]
+fn sync_reports_drift_and_preserves_hand_edits_without_force() {
+    let root = unique_tmpdir();
+    apply(
+        &root,
+        &scaffold::new_project("shop", true, TS),
+        Options::default(),
+    );
+
+    // A hand edit to a generated file.
+    let edited = root.join("src/app/users/service.rs");
+    let original = fs::read_to_string(&edited).unwrap();
+    fs::write(&edited, format!("{original}\n// hand edit\n")).unwrap();
+
+    let recon = gize_generator::sync::reconcile(&root, &desired_code_plan(&root)).unwrap();
+    assert_eq!(
+        recon.drift.len(),
+        1,
+        "the edited file should be flagged as drift"
+    );
+
+    // Without force, drift is left untouched.
+    let applied = gize_generator::sync::apply(&root, &recon, false, false).unwrap();
+    assert_eq!(applied.left.len(), 1);
+    assert!(
+        fs::read_to_string(&edited)
+            .unwrap()
+            .contains("// hand edit")
+    );
+
+    // With force, it is overwritten back to the manifest's version.
+    let recon = gize_generator::sync::reconcile(&root, &desired_code_plan(&root)).unwrap();
+    gize_generator::sync::apply(&root, &recon, true, false).unwrap();
+    assert!(
+        !fs::read_to_string(&edited)
+            .unwrap()
+            .contains("// hand edit")
+    );
+}
+
+/// Record the Product module's shape in the project manifest, as `gize make crud` does.
+fn record_products_in_manifest(root: &Path) {
+    let path = root.join("gize.toml");
+    let mut manifest = gize_core::Manifest::from_toml(&fs::read_to_string(&path).unwrap()).unwrap();
+    manifest.upsert_module(gize_core::Module {
+        name: "products".to_string(),
+        fields: product_model().to_field_tokens(),
+        belongs_to: Vec::new(),
+    });
+    fs::write(&path, manifest.to_toml().unwrap()).unwrap();
+}
+
+#[test]
+fn auth_and_users_slice_match_snapshots() {
+    // The security-sensitive generated code (auth module + the users slice that hashes
+    // passwords and issues tokens) is pinned so template edits are always reviewed.
+    let plan = scaffold::new_project("shop", true, TS);
+    for rel in [
+        "src/auth/mod.rs",
+        "src/app/users/handler.rs",
+        "src/app/users/routes.rs",
+        "src/app/users/dto.rs",
+        "src/app/users/error.rs",
+    ] {
+        assert_snapshot(&format!("auth__{}", slug(rel)), content(&plan, rel));
+    }
+}

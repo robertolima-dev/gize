@@ -1,6 +1,6 @@
 # ADR-011: Migration strategy
 
-- **Status:** Accepted
+- **Status:** Accepted (revised 2026-07-06 for the Alpha phase — see "Revision")
 - **Date:** 2026-07-04
 - **Deciders:** Gize core team
 
@@ -49,3 +49,38 @@ edits the SQL before applying.
 - `gize-db` owns the migrator integration and the field-type → SQL-type mapping.
 - CI runs migrations against a Postgres service before integration tests.
 - Rollback support (`.down.sql`) is generated where derivable; otherwise stubbed with a TODO.
+
+## Revision (Alpha) — model-change diffing
+
+The MVP generated `CREATE TABLE` only. The Alpha adds **diff-based migrations**: when a
+module's fields in `gize.toml` (the source of truth, ADR-009 revision) have drifted from the
+schema described by the existing migrations for its table, `gize make migration` can emit the
+`ALTER TABLE` needed to reconcile them.
+
+**Diff source.** We diff the manifest's desired columns against the columns implied by the
+table's already-generated migrations (the checked-in SQL is the schema of record) — not
+against a live database connection. This keeps diffing offline, deterministic, and testable,
+and avoids diverging behaviour between a developer with and without a reachable DB.
+
+**What is generated automatically vs. gated:**
+
+- **Additive changes → automatic.** A new field in the manifest with no matching column emits
+  `ALTER TABLE <t> ADD COLUMN <c> <type>`. New nullable columns, or columns with a default,
+  are safe; a new `NOT NULL` column without a default is emitted as nullable with a `-- TODO`
+  note (backfill then tighten), never a data-losing default guess.
+- **Destructive changes → gated, never automatic.** A column present in the schema but absent
+  from the manifest is a potential `DROP COLUMN`, and a type change is a potential rewrite.
+  These are **reported**, not written, unless the developer confirms with `--force` (mirroring
+  the safety model of `gize sync`, ADR-009). Rename is indistinguishable from drop+add at the
+  column level, so it is always surfaced for human decision rather than inferred.
+
+**Timestamp format.** We keep the nanosecond stamp (`{nanos:020}`, from 0.5.1). A
+human-readable calendar stamp (`YYYYMMDDHHMMSS`) was considered and **rejected**: a calendar
+stamp for any realistic date (~2e13) is *smaller* than a current nanosecond-since-epoch stamp
+(~1.7e18), so switching would make Alpha-generated migrations sort *before* the nanosecond
+migrations already present in a 0.5.1 project. sqlx applies migrations in version order and
+refuses out-of-order additions, so the switch would break `gize migrate` on existing projects.
+Nanosecond stamps are unique, monotonic, and correctly ordered, so they stay.
+
+**Still not runtime auto-migration.** Diffing produces a reviewable `.sql` file; nothing is
+applied until `gize migrate`. The developer remains the owner of the DDL.

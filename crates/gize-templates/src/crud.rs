@@ -17,12 +17,23 @@ fn base(template: &str, model: &ModelSpec) -> String {
         .replace("__TABLE__", &table)
 }
 
-/// `pub name: String,` lines for the Create/Update DTOs.
+/// `pub name: String,` lines for the Create/Update DTOs. `String` fields get a
+/// non-empty length validation so blank input is rejected with `422` rather than persisted.
 fn dto_fields(model: &ModelSpec) -> String {
     model
         .fields
         .iter()
-        .map(|f| format!("    pub {}: {},", f.name, f.ty.rust_type()))
+        .map(|f| {
+            if matches!(f.ty, gize_core::FieldType::String) {
+                format!(
+                    "    #[validate(length(min = 1, message = \"must not be empty\"))]\n    pub {}: {},",
+                    f.name,
+                    f.ty.rust_type()
+                )
+            } else {
+                format!("    pub {}: {},", f.name, f.ty.rust_type())
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -71,15 +82,16 @@ pub fn dto_rs(model: &ModelSpec) -> String {
     let fields = dto_fields(model);
     base(
         r#"use serde::Deserialize;
+use validator::Validate;
 
 /// Payload to create a `__NAME__`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct Create__NAME__ {
 __FIELDS__
 }
 
 /// Payload to update a `__NAME__`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct Update__NAME__ {
 __FIELDS__
 }
@@ -99,15 +111,31 @@ use axum::response::{IntoResponse, Response};
 #[derive(Debug)]
 pub enum Error {
     NotFound,
+    /// A unique constraint was violated (e.g. a duplicate key) — maps to 409.
+    Conflict,
+    /// Request payload failed validation — maps to 422.
+    Validation(String),
     Database(sqlx::Error),
 }
 
 impl From<sqlx::Error> for Error {
     fn from(error: sqlx::Error) -> Self {
-        match error {
-            sqlx::Error::RowNotFound => Error::NotFound,
-            other => Error::Database(other),
+        if let sqlx::Error::RowNotFound = error {
+            return Error::NotFound;
         }
+        // Postgres unique_violation (SQLSTATE 23505) -> 409 Conflict.
+        if let sqlx::Error::Database(ref db) = error {
+            if db.code().as_deref() == Some("23505") {
+                return Error::Conflict;
+            }
+        }
+        Error::Database(error)
+    }
+}
+
+impl From<validator::ValidationErrors> for Error {
+    fn from(errors: validator::ValidationErrors) -> Self {
+        Error::Validation(errors.to_string())
     }
 }
 
@@ -115,6 +143,8 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            Error::Conflict => (StatusCode::CONFLICT, "already exists".to_string()),
+            Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
         };
         (status, message).into_response()
@@ -254,6 +284,7 @@ pub fn handler_rs(model: &ModelSpec) -> String {
         r#"use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use validator::Validate;
 
 use super::dto::{Create__NAME__, Update__NAME__};
 use super::error::Error;
@@ -278,6 +309,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(input): Json<Create__NAME__>,
 ) -> Result<(StatusCode, Json<__NAME__>), Error> {
+    input.validate()?;
     let item = service::create(&state.db, &input).await?;
     Ok((StatusCode::CREATED, Json(item)))
 }
@@ -287,6 +319,7 @@ pub async fn update(
     Path(id): Path<uuid::Uuid>,
     Json(input): Json<Update__NAME__>,
 ) -> Result<Json<__NAME__>, Error> {
+    input.validate()?;
     let item = service::update(&state.db, id, &input).await?;
     Ok(Json(item))
 }
@@ -303,23 +336,32 @@ pub async fn delete(
     )
 }
 
-/// `routes.rs`: the resource's router.
+/// `routes.rs`: the resource's router. Reads (`GET`) are public; writes (`POST`/`PUT`/
+/// `DELETE`) are guarded by the auth middleware (ADR-013).
 pub fn routes_rs(model: &ModelSpec) -> String {
     base(
-        r#"use axum::Router;
-use axum::routing::get;
+        r#"use axum::routing::{get, post};
+use axum::{middleware, Router};
 
 use super::handler;
+use crate::auth::require_auth;
 use crate::state::AppState;
 
-/// Routes for the `__TABLE__` resource.
+/// Routes for the `__TABLE__` resource. Mutating routes require a valid bearer token.
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/__TABLE__", get(handler::list).post(handler::create))
+    let public = Router::new()
+        .route("/__TABLE__", get(handler::list))
+        .route("/__TABLE__/:id", get(handler::show));
+
+    let protected = Router::new()
+        .route("/__TABLE__", post(handler::create))
         .route(
             "/__TABLE__/:id",
-            get(handler::show).put(handler::update).delete(handler::delete),
+            axum::routing::put(handler::update).delete(handler::delete),
         )
+        .route_layer(middleware::from_fn(require_auth));
+
+    public.merge(protected)
 }
 "#,
         model,
