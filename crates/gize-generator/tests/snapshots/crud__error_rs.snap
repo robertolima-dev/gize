@@ -7,6 +7,9 @@ pub enum Error {
     NotFound,
     /// A unique constraint was violated (e.g. a duplicate key) — maps to 409.
     Conflict,
+    /// A foreign-key constraint was violated (a referenced record is missing, or is still
+    /// referenced by another row) — maps to 409.
+    ForeignKey,
     /// Request payload failed validation — maps to 422.
     Validation(String),
     Database(sqlx::Error),
@@ -17,10 +20,12 @@ impl From<sqlx::Error> for Error {
         if let sqlx::Error::RowNotFound = error {
             return Error::NotFound;
         }
-        // Postgres unique_violation (SQLSTATE 23505) -> 409 Conflict.
+        // Map Postgres integrity violations to client errors instead of a generic 500.
         if let sqlx::Error::Database(ref db) = error {
-            if db.code().as_deref() == Some("23505") {
-                return Error::Conflict;
+            match db.code().as_deref() {
+                Some("23505") => return Error::Conflict,   // unique_violation
+                Some("23503") => return Error::ForeignKey, // foreign_key_violation
+                _ => {}
             }
         }
         Error::Database(error)
@@ -38,6 +43,10 @@ impl IntoResponse for Error {
         let (status, message) = match self {
             Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             Error::Conflict => (StatusCode::CONFLICT, "already exists".to_string()),
+            Error::ForeignKey => (
+                StatusCode::CONFLICT,
+                "a referenced record does not exist or is still in use".to_string(),
+            ),
             Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
         };
