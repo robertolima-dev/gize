@@ -6,10 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
-## [Unreleased] — Alpha phase
+## [0.6.1] - 2026-07-06 — Alpha
 
-Work toward the Alpha (see `docs/roadmap.md`). ADR-before-code: ADR-009 and ADR-011 revised;
-ADR-013 (auth) and ADR-014 (relationships) added.
+The Alpha phase (see `docs/roadmap.md`): the manifest-driven workflow, authentication,
+relationships and validation, verified end-to-end against PostgreSQL. The reference blog app
+(`users` ← `posts` ← `comments`, auth-protected) is built through the CLI + `gize.toml` and
+rebuilt from scratch reproducibly with `gize sync`. ADR-before-code: ADR-009 and ADR-011
+revised; ADR-013 (auth) and ADR-014 (relationships) added.
 
 ### Added
 
