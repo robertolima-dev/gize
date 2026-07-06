@@ -8,3 +8,6 @@ rust-version.workspace = true
 description = "OpenAPI spec generation for Gize (Beta phase; see ADR-010)."
 
 [dependencies]
+gize-core.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true

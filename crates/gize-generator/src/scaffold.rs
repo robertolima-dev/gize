@@ -4,7 +4,7 @@
 use anyhow::Result;
 use gize_core::naming::table_name;
 use gize_core::{Manifest, ModelSpec, Module};
-use gize_templates::{auth, crud, model, module, project, user};
+use gize_templates::{auth, crud, model, module, openapi, project, user};
 
 use crate::plan::Plan;
 use crate::registry;
@@ -51,6 +51,30 @@ pub fn auth_mod_rs() -> String {
     auth::mod_rs()
 }
 
+/// The `src/app/openapi.rs` route module (ADR-010). Static (does not depend on the modules),
+/// so it can be reconciled drift-aware by `gize sync`.
+pub fn openapi_module_rs() -> String {
+    openapi::module_rs()
+}
+
+/// The `openapi.json` spec rendered from the manifest (ADR-010). This is a *derived* artifact
+/// — always regenerated from the manifest, never drift-protected.
+pub fn openapi_json(manifest: &Manifest) -> Result<String> {
+    let spec = gize_openapi::spec_json(manifest)?;
+    serde_json::to_string_pretty(&spec).map_err(Into::into)
+}
+
+/// The OpenAPI slice (ADR-010): the `src/app/openapi.rs` route module plus the generated
+/// `openapi.json`. Used by `gize new --openapi` and reconciled by `gize sync` when
+/// `features.openapi` is on. The module is registered in `app/mod.rs` by the command, like
+/// any module. The spec describes the *resource* routes only — the openapi module is wired
+/// but never listed in `[[module]]`, so it does not appear in its own spec.
+pub fn openapi_slice(manifest: &Manifest) -> Result<Plan> {
+    Ok(Plan::new()
+        .create("src/app/openapi.rs", openapi::module_rs())
+        .create("openapi.json", openapi_json(manifest)?))
+}
+
 /// The code files (no migration) for a module reconstructed from its manifest entry, for
 /// `gize sync` (ADR-009 revision). The built-in `users` module keeps its special `model.rs`.
 pub fn module_code(module: &Module) -> Result<Plan> {
@@ -74,13 +98,15 @@ pub fn module_migration_sql(module: &Module) -> Result<String> {
 ///
 /// When `with_user` is set (the default), a built-in `users` resource is scaffolded and
 /// wired in — model, CRUD and a migration with an `is_admin` flag — so a fresh project has
-/// authentication-ready data from the start. `timestamp` names the users migration and is
+/// authentication-ready data from the start. When `with_openapi` is set, an OpenAPI spec +
+/// `/docs` UI are generated and wired (ADR-010). `timestamp` names the users migration and is
 /// injected (not read from the clock) to keep generation pure and tests deterministic.
-pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
+pub fn new_project(name: &str, with_user: bool, with_openapi: bool, timestamp: &str) -> Plan {
     let mut manifest = Manifest::new(name);
     // Auth is generated for every project (ADR-013): the `src/auth` module is emitted below
     // and write routes are guarded, so the manifest reflects it.
     manifest.features.authentication = true;
+    manifest.features.openapi = with_openapi;
     if with_user {
         // Record the built-in users module with its full shape so `gize sync` can
         // reconcile/rebuild it from the manifest alone (ADR-009 revision).
@@ -91,17 +117,18 @@ pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
         });
     }
 
-    // Pre-wire `users` into app/mod.rs by running the same registry edit `make app` uses,
-    // keeping a single source of truth for the module/route wiring format.
-    let app_mod = if with_user {
-        registry::register_module(&project::app_mod_rs(), "users")
-            .expect("app_mod_rs template carries the gize markers")
-            .content
-    } else {
-        project::app_mod_rs()
-    };
+    // Pre-wire the built-in modules into app/mod.rs using the same registry edit `make app`
+    // uses, keeping a single source of truth for the module/route wiring format.
+    let mut app_mod = project::app_mod_rs();
+    for module in [(with_user, "users"), (with_openapi, "openapi")] {
+        if module.0 {
+            app_mod = registry::register_module(&app_mod, module.1)
+                .expect("app_mod_rs template carries the gize markers")
+                .content;
+        }
+    }
 
-    let plan = Plan::new()
+    let mut plan = Plan::new()
         .create("Cargo.toml", project::cargo_toml(name))
         .create("gize.toml", project::gize_toml(&manifest))
         .create(".env.example", project::env_example(name))
@@ -119,10 +146,14 @@ pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
         .mkdir("migrations");
 
     if with_user {
-        plan.extend(user_slice(timestamp))
-    } else {
-        plan
+        plan = plan.extend(user_slice(timestamp));
     }
+    if with_openapi {
+        // A fresh manifest is valid, so the spec renders; propagate any error defensively.
+        plan = plan
+            .extend(openapi_slice(&manifest).expect("fresh manifest yields a valid OpenAPI spec"));
+    }
+    plan
 }
 
 /// The built-in `users` vertical slice for a fresh project: the generic CRUD templates plus
@@ -220,7 +251,7 @@ mod tests {
 
     #[test]
     fn new_project_plan_includes_core_files() {
-        let plan = new_project("shop", false, "20260704120000");
+        let plan = new_project("shop", false, false, "20260704120000");
         let paths = paths_of(&plan);
         assert!(paths.contains(&"Cargo.toml".to_string()));
         assert!(paths.contains(&"gize.toml".to_string()));
@@ -230,7 +261,7 @@ mod tests {
 
     #[test]
     fn new_project_without_user_omits_users_slice() {
-        let plan = new_project("shop", false, "20260704120000");
+        let plan = new_project("shop", false, false, "20260704120000");
         let paths = paths_of(&plan);
         assert!(!paths.iter().any(|p| p.starts_with("src/app/users/")));
         assert!(!paths.iter().any(|p| p.ends_with("_create_users.sql")));
@@ -241,7 +272,7 @@ mod tests {
 
     #[test]
     fn new_project_scaffolds_and_wires_users_by_default() {
-        let plan = new_project("shop", true, "20260704120000");
+        let plan = new_project("shop", true, false, "20260704120000");
         let paths = paths_of(&plan);
         for file in ["mod.rs", "model.rs", "dto.rs", "repository.rs", "routes.rs"] {
             assert!(
@@ -302,6 +333,46 @@ mod tests {
             paths,
             vec!["migrations/20260704120000_add_index_to_users.sql".to_string()]
         );
+    }
+
+    #[test]
+    fn new_project_with_openapi_includes_spec_and_module() {
+        let plan = new_project("blog", true, true, "20260704120000");
+        let paths: Vec<_> = plan
+            .ops
+            .iter()
+            .map(|o| o.path.display().to_string())
+            .collect();
+        assert!(paths.contains(&"src/app/openapi.rs".to_string()));
+        assert!(paths.contains(&"openapi.json".to_string()));
+        // The spec is valid JSON describing the users routes; the openapi module is wired.
+        let spec = plan
+            .ops
+            .iter()
+            .find(|o| o.path.display().to_string() == "openapi.json")
+            .map(|o| o.contents.as_str())
+            .unwrap();
+        assert!(spec.contains("\"/users\""));
+        let app_mod = plan
+            .ops
+            .iter()
+            .find(|o| o.path.display().to_string() == "src/app/mod.rs")
+            .map(|o| o.contents.as_str())
+            .unwrap();
+        assert!(app_mod.contains("mod openapi;"));
+        assert!(app_mod.contains(".merge(openapi::routes())"));
+    }
+
+    #[test]
+    fn new_project_without_openapi_omits_it() {
+        let plan = new_project("blog", true, false, "20260704120000");
+        let paths: Vec<_> = plan
+            .ops
+            .iter()
+            .map(|o| o.path.display().to_string())
+            .collect();
+        assert!(!paths.contains(&"openapi.json".to_string()));
+        assert!(!paths.iter().any(|p| p == "src/app/openapi.rs"));
     }
 
     #[test]

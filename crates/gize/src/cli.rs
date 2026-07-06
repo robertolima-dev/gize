@@ -34,6 +34,9 @@ pub enum Command {
         /// Skip the built-in `users` resource (model, CRUD and migration).
         #[arg(long)]
         no_user: bool,
+        /// Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`).
+        #[arg(long)]
+        openapi: bool,
         #[command(flatten)]
         flags: GenFlags,
     },

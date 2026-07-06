@@ -59,7 +59,7 @@ fn new_project_materializes_expected_tree_on_disk() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, TS),
+        &scaffold::new_project("shop", true, false, TS),
         Options::default(),
     );
 
@@ -94,7 +94,7 @@ fn new_project_materializes_expected_tree_on_disk() {
 #[test]
 fn regenerating_is_idempotent_and_preserves_hand_edits() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", true, TS);
+    let plan = scaffold::new_project("shop", true, false, TS);
     apply(&root, &plan, Options::default());
 
     // Simulate a developer editing a generated file.
@@ -125,7 +125,7 @@ fn regenerating_is_idempotent_and_preserves_hand_edits() {
 #[test]
 fn force_overwrites_and_dry_run_writes_nothing() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", false, TS);
+    let plan = scaffold::new_project("shop", false, false, TS);
     apply(&root, &plan, Options::default());
 
     let sentinel = root.join("Cargo.toml");
@@ -168,7 +168,7 @@ fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", false, TS),
+        &scaffold::new_project("shop", false, false, TS),
         Options::default(),
     );
     apply(
@@ -231,7 +231,7 @@ fn content<'a>(plan: &'a Plan, rel: &str) -> &'a str {
 #[test]
 fn project_skeleton_matches_snapshots() {
     // No built-in users here, so the skeleton templates are isolated from the CRUD ones.
-    let plan = scaffold::new_project("shop", false, TS);
+    let plan = scaffold::new_project("shop", false, false, TS);
     for rel in [
         "Cargo.toml",
         "gize.toml",
@@ -290,7 +290,7 @@ fn sync_rebuilds_a_deleted_module_from_the_manifest() {
     // A project with the built-in users plus a Product CRUD, both recorded in gize.toml.
     apply(
         &root,
-        &scaffold::new_project("shop", true, TS),
+        &scaffold::new_project("shop", true, false, TS),
         Options::default(),
     );
     apply(
@@ -328,7 +328,7 @@ fn sync_reports_drift_and_preserves_hand_edits_without_force() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, TS),
+        &scaffold::new_project("shop", true, false, TS),
         Options::default(),
     );
 
@@ -379,7 +379,7 @@ fn record_products_in_manifest(root: &Path) {
 fn auth_and_users_slice_match_snapshots() {
     // The security-sensitive generated code (auth module + the users slice that hashes
     // passwords and issues tokens) is pinned so template edits are always reviewed.
-    let plan = scaffold::new_project("shop", true, TS);
+    let plan = scaffold::new_project("shop", true, false, TS);
     for rel in [
         "src/auth/mod.rs",
         "src/app/users/handler.rs",

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod crud;
 pub mod model;
 pub mod module;
+pub mod openapi;
 pub mod project;
 pub mod user;
 

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+## [Unreleased] — Beta
+
+Work toward the Beta (see `docs/roadmap.md`): Admin, OpenAPI, a second database, and a plugin
+API. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010 (OpenAPI) and ADR-015
+(second database) added.
+
+### Added
+
+- **OpenAPI generation** (ADR-010). `gize new --openapi` (or `features.openapi` in `gize.toml`)
+  generates an OpenAPI 3.0.3 spec **from the manifest + DTOs** — the same source of truth the
+  CRUD generator uses — so the spec matches the routes by construction (no drift). The app
+  serves it at `GET /openapi.json` with a reference UI at `/docs`. The spec covers every
+  resource's CRUD plus `users` register/login, marks write routes as bearer-secured, hides
+  `password` from responses, and includes relationship FK columns. It is a derived artifact:
+  `gize make crud` and `gize sync` refresh it automatically from the current manifest.
+
 ## [0.6.1] - 2026-07-06 — Alpha
 
 The Alpha phase (see `docs/roadmap.md`): the manifest-driven workflow, authentication,

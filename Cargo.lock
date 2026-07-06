@@ -487,7 +487,9 @@ version = "0.6.2"
 dependencies = [
  "anyhow",
  "gize-core",
+ "gize-openapi",
  "gize-templates",
+ "serde_json",
 ]
 
 [[package]]
@@ -497,6 +499,11 @@ version = "0.6.2"
 [[package]]
 name = "gize-openapi"
 version = "0.6.2"
+dependencies = [
+ "anyhow",
+ "gize-core",
+ "serde_json",
+]
 
 [[package]]
 name = "gize-templates"

@@ -116,14 +116,10 @@ mod tests {
     use crate::plan::Plan;
 
     fn tmpdir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let base = std::env::temp_dir().join(format!("gize-writer-{}", std::process::id()));
-        let unique = base.join(format!(
-            "{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let unique = base.join(COUNTER.fetch_add(1, Ordering::Relaxed).to_string());
         fs::create_dir_all(&unique).unwrap();
         unique
     }
