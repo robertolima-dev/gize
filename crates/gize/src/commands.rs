@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
-use gize_core::{Manifest, ModelSpec, Module};
+use gize_core::{Dialect, Manifest, ModelSpec, Module};
 use gize_generator::{Options, Plan, Writer, diff, registry, scaffold, sync};
 
 use crate::cli::GenFlags;
@@ -40,13 +40,20 @@ fn migration_timestamp() -> String {
 /// `gize new <name>` — scaffold a project into a new directory named `name`. Unless
 /// `no_user` is set, a built-in `users` resource (model, CRUD, migration with an `is_admin`
 /// flag) is generated and wired in.
-pub fn new_project(name: &str, no_user: bool, flags: GenFlags) -> Result<()> {
+pub fn new_project(
+    name: &str,
+    no_user: bool,
+    openapi: bool,
+    database: &str,
+    flags: GenFlags,
+) -> Result<()> {
     let root = Path::new(name);
     if root.exists() && !flags.force {
         bail!("directory `{name}` already exists (use --force to generate into it)");
     }
 
-    let plan = scaffold::new_project(name, !no_user, &migration_timestamp());
+    let dialect = Dialect::from_database(database);
+    let plan = scaffold::new_project(name, !no_user, openapi, dialect, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(root, &plan)
         .with_context(|| format!("scaffolding project `{name}`"))?;
@@ -61,6 +68,9 @@ pub fn new_project(name: &str, no_user: bool, flags: GenFlags) -> Result<()> {
                 "\nIncludes a `users` resource (id, name, email, password, is_admin). \
                  Set DATABASE_URL, then `gize migrate` to create the table."
             );
+        }
+        if openapi {
+            println!("OpenAPI spec at `/openapi.json` and docs at `/docs` once running.");
         }
         println!("Next:\n  cd {name}\n  cp .env.example .env\n  gize serve");
     }
@@ -150,6 +160,25 @@ fn record_module_in_manifest(module: Module, flags: GenFlags) -> Result<()> {
     )
 }
 
+/// Refresh the derived `openapi.json` from the current manifest when `features.openapi` is on,
+/// keeping the spec in parity with the routes after a structural change (ADR-010). No-op when
+/// the feature is off. The spec is always overwritten (it is generated, not hand-edited).
+fn refresh_openapi_if_enabled(flags: GenFlags) -> Result<()> {
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    if !manifest.features.openapi {
+        return Ok(());
+    }
+    if flags.dry_run {
+        println!("  update  openapi.json (would refresh the spec)");
+    } else {
+        fs::write("openapi.json", scaffold::openapi_json(&manifest)?)
+            .context("writing openapi.json")?;
+        println!("  update  openapi.json (refreshed from gize.toml)");
+    }
+    Ok(())
+}
+
 /// Persist a manifest, honoring `--dry-run`, with a consistent one-line report.
 fn write_manifest(manifest: &Manifest, flags: GenFlags, what: &str) -> Result<()> {
     if flags.dry_run {
@@ -173,7 +202,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     }
     let module = table_name(&model.name);
 
-    let plan = scaffold::make_crud(&model, &migration_timestamp());
+    let plan = scaffold::make_crud(&model, project_dialect()?, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating CRUD")?;
@@ -192,9 +221,57 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
         },
         flags,
     )?;
+    refresh_openapi_if_enabled(flags)?;
 
     if !flags.dry_run {
         println!("\nApply the migration with:\n  gize migrate");
+    }
+    Ok(())
+}
+
+/// `gize make admin` — generate the admin SPA (ADR-006) for every resource in the manifest.
+///
+/// The admin is a **separate** Vite + React + TypeScript app under `admin/`, data-driven from
+/// `gize.toml`. The static shell is written drift-aware; `admin/src/resources.ts` is a derived
+/// artifact refreshed from the current manifest. The app reaches the API through a Vite dev
+/// proxy, so the backend needs no CORS or other changes.
+pub fn make_admin(_name: Option<&str>, flags: GenFlags) -> Result<()> {
+    ensure_in_project()?;
+    let mut manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    if manifest.modules.is_empty() {
+        bail!("no resources in gize.toml — add one with `gize make crud` first");
+    }
+
+    let report = Writer::new(flags.into())
+        .apply(Path::new("."), &scaffold::admin_shell_plan(&manifest))
+        .context("generating the admin app")?;
+    println!("Admin SPA (admin/):\n{}", report.render(flags.dry_run));
+
+    // Refresh the derived descriptors from the current manifest (always overwritten).
+    if flags.dry_run {
+        println!("  update  admin/src/resources.ts (would refresh descriptors)");
+    } else {
+        fs::create_dir_all("admin/src").context("creating admin/src")?;
+        fs::write(
+            "admin/src/resources.ts",
+            scaffold::admin_resources_ts(&manifest)?,
+        )
+        .context("writing admin/src/resources.ts")?;
+        println!("  update  admin/src/resources.ts (from gize.toml)");
+    }
+
+    // Record the feature so `gize sync` reconciles the admin.
+    if !manifest.features.admin && !flags.dry_run {
+        manifest.features.admin = true;
+        fs::write("gize.toml", manifest.to_toml()?).context("writing gize.toml")?;
+    }
+
+    if !flags.dry_run {
+        println!(
+            "\nNext:\n  cd admin\n  npm install\n  npm run dev   \
+             # http://localhost:5173 (proxies /api to your `gize serve` backend)"
+        );
     }
     Ok(())
 }
@@ -204,7 +281,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
 pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
     let model = ModelSpec::parse(name, fields).context("invalid model definition")?;
-    let plan = scaffold::make_model(&model, &migration_timestamp());
+    let plan = scaffold::make_model(&model, project_dialect()?, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating model")?;
@@ -339,12 +416,14 @@ pub fn sync(flags: GenFlags) -> Result<()> {
         return Ok(());
     }
 
+    let dialect = Dialect::from_database(&manifest.stack.database);
+
     // 1. Desired code files for every declared module (deterministic; no timestamps). The
     //    auth module is part of the skeleton the CRUD routes depend on, so reconcile it too.
     let mut plan = Plan::new().create("src/auth/mod.rs", scaffold::auth_mod_rs());
     for module in &manifest.modules {
         plan = plan.extend(
-            scaffold::module_code(module)
+            scaffold::module_code(module, dialect)
                 .with_context(|| format!("planning module `{}`", module.name))?,
         );
     }
@@ -354,7 +433,7 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     //    foreign key's target table is created before the table that references it (ADR-014).
     for module in manifest.modules_in_dependency_order()? {
         if !create_migration_exists(&module.name)? {
-            let sql = scaffold::module_migration_sql(module)?;
+            let sql = scaffold::module_migration_sql(module, dialect)?;
             plan = plan.create(
                 format!(
                     "migrations/{}_create_{}.sql",
@@ -364,6 +443,18 @@ pub fn sync(flags: GenFlags) -> Result<()> {
                 sql,
             );
         }
+    }
+
+    // 2b. OpenAPI (ADR-010): when enabled, reconcile the (static) route module drift-aware.
+    //     The spec itself is a derived artifact, refreshed unconditionally after apply below.
+    if manifest.features.openapi {
+        plan = plan.create("src/app/openapi.rs", scaffold::openapi_module_rs());
+    }
+
+    // 2c. Admin (ADR-006): reconcile the static SPA shell drift-aware; the resource
+    //     descriptors are a derived artifact, refreshed after apply below.
+    if manifest.features.admin {
+        plan = plan.extend(scaffold::admin_shell_plan(&manifest));
     }
 
     // 3. Diff against the filesystem and apply per the safety flags.
@@ -378,6 +469,34 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     // 4. Wire each module into src/app/mod.rs (idempotent; a no-op for already-wired ones).
     for module in &manifest.modules {
         register_in_app_mod(&module.name, flags)?;
+    }
+    // The OpenAPI module is wired like any module, but is never listed in `[[module]]` (it is
+    // not a resource), so register it here when the feature is on, and refresh the derived
+    // spec from the current manifest (always overwritten — it is generated, not hand-edited).
+    if manifest.features.openapi {
+        register_in_app_mod("openapi", flags)?;
+        if flags.dry_run {
+            println!("  update  openapi.json (would refresh the spec)");
+        } else {
+            fs::write("openapi.json", scaffold::openapi_json(&manifest)?)
+                .context("writing openapi.json")?;
+            println!("  update  openapi.json (refreshed from gize.toml)");
+        }
+    }
+
+    // Refresh the derived admin descriptors from the current manifest (always overwritten).
+    if manifest.features.admin {
+        if flags.dry_run {
+            println!("  update  admin/src/resources.ts (would refresh descriptors)");
+        } else {
+            fs::create_dir_all("admin/src").context("creating admin/src")?;
+            fs::write(
+                "admin/src/resources.ts",
+                scaffold::admin_resources_ts(&manifest)?,
+            )
+            .context("writing admin/src/resources.ts")?;
+            println!("  update  admin/src/resources.ts (refreshed from gize.toml)");
+        }
     }
 
     // 5. Surface drift explicitly — the conservative default never overwrites hand edits.
@@ -512,6 +631,24 @@ pub fn serve() -> Result<()> {
     Ok(())
 }
 
+/// `gize <name> …` — dispatch an unknown subcommand to a `gize-<name>` plugin on PATH
+/// (ADR-008, v0). The plugin is a normal executable; it receives the remaining arguments and
+/// generates through the same safe writer via `gize_generator::plugin`.
+pub fn run_external(args: Vec<String>) -> Result<()> {
+    let Some((name, rest)) = args.split_first() else {
+        bail!("no command given");
+    };
+    let bin = format!("gize-{name}");
+    match std::process::Command::new(&bin).args(rest).status() {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => bail!("`{bin}` exited with a non-zero status"),
+        Err(_) => bail!(
+            "unknown command `{name}`, and no `{bin}` plugin was found on PATH.\n\
+             Plugins are `gize-<name>` executables on your PATH (ADR-008, v0)."
+        ),
+    }
+}
+
 /// `gize doctor` — sanity-check the environment and project.
 pub fn doctor() -> Result<()> {
     println!("gize doctor\n");
@@ -553,13 +690,11 @@ fn ensure_in_project() -> Result<()> {
     Ok(())
 }
 
-/// Handlers not yet implemented in the MVP skeleton. They report the planned behaviour so
-/// the command surface is complete and discoverable (see BACKLOG.md / roadmap).
-pub fn not_yet(command: &str, planned: &str) -> Result<()> {
-    println!("`gize {command}` is planned but not implemented in the MVP skeleton yet.");
-    println!("Planned behaviour: {planned}");
-    println!("Tracked in BACKLOG.md.");
-    Ok(())
+/// The database dialect for the current project, read from `gize.toml` (ADR-015).
+fn project_dialect() -> Result<Dialect> {
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    Ok(Dialect::from_database(&manifest.stack.database))
 }
 
 #[cfg(test)]

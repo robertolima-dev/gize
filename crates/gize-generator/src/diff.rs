@@ -199,13 +199,14 @@ mod tests {
     use std::fs;
 
     fn tmpdir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        // pid + a process-local counter make the path unique even when two tests run in the
+        // same nanosecond on parallel threads.
         let dir = std::env::temp_dir().join(format!(
             "gize-diff-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(&dir).unwrap();
         dir

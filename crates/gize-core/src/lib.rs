@@ -4,9 +4,11 @@
 //! the CLI. It defines the vocabulary the rest of the workspace shares — the project
 //! manifest (`gize.toml`), model/field definitions, and naming conventions.
 
+pub mod dialect;
 pub mod field;
 pub mod manifest;
 pub mod naming;
 
+pub use dialect::Dialect;
 pub use field::{Field, FieldType, ModelSpec, Relation};
 pub use manifest::{Manifest, Module};

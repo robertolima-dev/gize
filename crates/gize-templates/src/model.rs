@@ -1,7 +1,7 @@
 //! Templates for `gize make model`: the model struct and its migration.
 
-use gize_core::ModelSpec;
 use gize_core::naming::table_name;
+use gize_core::{Dialect, ModelSpec};
 
 /// Render `model.rs` for a model: an `sqlx::FromRow` struct plus an `id` and timestamps.
 pub fn model_rs(model: &ModelSpec) -> String {
@@ -26,8 +26,9 @@ pub struct {name} {{
     )
 }
 
-/// Render a `CREATE TABLE` migration for a model (ADR-011: SQL-first, Postgres).
-pub fn migration_sql(model: &ModelSpec) -> String {
+/// Render a `CREATE TABLE` migration for a model (ADR-011: SQL-first). The `dialect` chooses
+/// the column types, primary-key generation and timestamp defaults (ADR-015).
+pub fn migration_sql(model: &ModelSpec, dialect: Dialect) -> String {
     let table = table_name(&model.name);
     let mut columns = String::new();
     for f in &model.fields {
@@ -36,7 +37,7 @@ pub fn migration_sql(model: &ModelSpec) -> String {
         columns.push_str(&format!(
             "    {name} {sql} NOT NULL,\n",
             name = f.name,
-            sql = f.ty.sql_type(),
+            sql = dialect.column_type(f.ty),
         ));
     }
 
@@ -52,14 +53,16 @@ pub fn migration_sql(model: &ModelSpec) -> String {
         ));
     }
 
+    let ts = dialect.timestamp_type_default();
     format!(
         r#"-- Migration: create {table}
 CREATE TABLE {table} (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-{columns}    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(){constraints}
+    {id_pk},
+{columns}    created_at {ts},
+    updated_at {ts}{constraints}
 );
-"#
+"#,
+        id_pk = dialect.id_pk_ddl(),
     )
 }
 
@@ -98,10 +101,20 @@ mod tests {
 
     #[test]
     fn migration_creates_table() {
-        let out = migration_sql(&user());
+        let out = migration_sql(&user(), Dialect::Postgres);
         assert!(out.contains("CREATE TABLE users"));
         assert!(out.contains("name TEXT NOT NULL"));
         assert!(out.contains("active BOOLEAN NOT NULL"));
+    }
+
+    #[test]
+    fn migration_follows_the_sqlite_dialect() {
+        let out = migration_sql(&user(), Dialect::Sqlite);
+        assert!(out.contains("id TEXT PRIMARY KEY"));
+        assert!(out.contains("active INTEGER NOT NULL")); // bool -> INTEGER
+        assert!(out.contains("created_at TEXT NOT NULL DEFAULT (strftime"));
+        assert!(!out.contains("gen_random_uuid"));
+        assert!(!out.contains("TIMESTAMPTZ"));
     }
 
     #[test]

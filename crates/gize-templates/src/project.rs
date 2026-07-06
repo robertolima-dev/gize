@@ -1,9 +1,10 @@
 //! Templates for `gize new`: the files that make up a fresh project skeleton.
 
-use gize_core::Manifest;
+use gize_core::{Dialect, Manifest};
 
-/// `Cargo.toml` for the generated application.
-pub fn cargo_toml(name: &str) -> String {
+/// `Cargo.toml` for the generated application. The `dialect` selects the sqlx driver feature
+/// (ADR-015).
+pub fn cargo_toml(name: &str, dialect: Dialect) -> String {
     format!(
         r#"[package]
 name = "{name}"
@@ -14,16 +15,17 @@ edition = "2024"
 axum = "0.7"
 tokio = {{ version = "1", features = ["full"] }}
 serde = {{ version = "1", features = ["derive"] }}
-sqlx = {{ version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }}
+sqlx = {{ version = "0.8", features = ["runtime-tokio", "{driver}", "uuid", "chrono"] }}
 uuid = {{ version = "1", features = ["v4", "serde"] }}
 chrono = {{ version = "0.4", features = ["serde"] }}
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-argon2 = "0.5"
+argon2 = {{ version = "0.5", features = ["std"] }}
 jsonwebtoken = "9"
 validator = {{ version = "0.19", features = ["derive"] }}
-"#
+"#,
+        driver = dialect.sqlx_feature(),
     )
 }
 
@@ -34,14 +36,16 @@ pub fn gize_toml(manifest: &Manifest) -> String {
         .unwrap_or_else(|_| String::from("# failed to render manifest\n"))
 }
 
-/// `.env.example` — runtime config lives in the environment (ADR-009).
-pub fn env_example(name: &str) -> String {
+/// `.env.example` — runtime config lives in the environment (ADR-009). The `DATABASE_URL`
+/// example follows the selected dialect (ADR-015).
+pub fn env_example(name: &str, dialect: Dialect) -> String {
     format!(
         "# Runtime configuration for {name} (copy to .env)\n\
-         DATABASE_URL=postgres://postgres:postgres@localhost:5432/{name}\n\
+         DATABASE_URL={url}\n\
          PORT=8080\n\
          # Secret used to sign auth tokens (JWT/HS256). Use a long random value in production.\n\
-         GIZE_JWT_SECRET=dev-only-change-me\n"
+         GIZE_JWT_SECRET=dev-only-change-me\n",
+        url = dialect.example_url(name),
     )
 }
 
@@ -75,11 +79,12 @@ async fn main() -> Result<()> {
     .to_string()
 }
 
-/// `src/state.rs`: shared application state (DB pool + config).
-pub fn state_rs() -> String {
+/// `src/state.rs`: shared application state (DB pool + config). The pool type follows the
+/// selected dialect (ADR-015).
+pub fn state_rs(dialect: Dialect) -> String {
     r#"use anyhow::Result;
-use sqlx::postgres::PgPoolOptions;
-use sqlx::PgPool;
+use sqlx::__MODULE__::__POOL_OPTIONS__;
+use sqlx::__POOL__;
 
 /// Shared application state, injected into every handler.
 #[derive(Clone)]
@@ -87,7 +92,7 @@ pub struct AppState {
     // Read by generated repositories once you add a resource (`gize make crud`).
     // Allowed to be unused so a freshly scaffolded, model-less app stays clippy-clean.
     #[allow(dead_code)]
-    pub db: PgPool,
+    pub db: __POOL__,
 }
 
 impl AppState {
@@ -95,7 +100,7 @@ impl AppState {
     pub async fn from_env() -> Result<Self> {
         let url = std::env::var("DATABASE_URL")
             .map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
-        let db = PgPoolOptions::new()
+        let db = __POOL_OPTIONS__::new()
             .max_connections(5)
             .connect(&url)
             .await?;
@@ -103,7 +108,9 @@ impl AppState {
     }
 }
 "#
-    .to_string()
+    .replace("__MODULE__", dialect.sqlx_module())
+    .replace("__POOL_OPTIONS__", dialect.pool_options())
+    .replace("__POOL__", dialect.pool_type())
 }
 
 /// `src/router.rs`: top-level router that mounts each module's routes.

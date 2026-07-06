@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+## [0.7.0] - 2026-07-06 — Beta
+
+The Beta phase (see `docs/roadmap.md`): a generated **Admin UI**, **OpenAPI** docs, a second
+database (**SQLite**) behind a dialect seam, and a **plugin API** — all verified end-to-end
+(the Admin CRUD is driven in a real headless browser; SQLite runs full CRUD with auth and
+relationships; an external plugin generates through the safe writer). The three Beta
+acceptance criteria are met. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010
+(OpenAPI) and ADR-015 (second database) added.
+
+### Added
+
+- **SQLite support behind a dialect seam** (ADR-015). `gize new --database sqlite` generates a
+  SQLite-targeting project; Postgres stays the default and its output is byte-identical to
+  before. A `Dialect` in `gize-core` centralizes everything that differs — column types (TEXT/
+  INTEGER/REAL), primary-key generation (app-side UUID on SQLite, `gen_random_uuid()` on
+  Postgres), bind placeholders (`?n` vs `$n`), timestamp defaults, the pool type
+  (`SqlitePool`/`PgPool`) and integrity-error codes (SQLite `2067`/`787` and Postgres
+  `23505`/`23503`, both mapped to 409). `gize migrate` runs against either database via sqlx's
+  `Any` driver. Verified end-to-end on SQLite: generate → migrate → serve → full CRUD with
+  auth, relationships and validation, including `uuid`/`DateTime<Utc>` round-tripping and
+  409s on duplicate/foreign-key violations.
+
+### Fixed
+
+- Generated projects now depend on `argon2` with the `std` feature, so `password_hash`'s
+  `OsRng` resolves regardless of the transitive `rand_core` version — a fresh `gize new`
+  project failed to compile without it once newer patch releases were pulled.
+
+### Added
+
+- **Plugin API v0** (ADR-008, **unstable**). Third parties can extend `gize` by implementing
+  the `Generator` trait from `gize_generator::plugin` — given the project context, it returns a
+  `Plan`, which is applied through the same safe `Writer` as the built-ins (so plugins inherit
+  `--dry-run`, `--force` and never-clobber for free). `gize <name> …` dispatches to a
+  `gize-<name>` executable on `PATH`. Ships an example external plugin,
+  `examples/gize-healthcheck`, that builds against the public API and generates a `/health`
+  route module; verified end-to-end (`gize healthcheck` creates the file, re-runs skip it,
+  `--dry-run` writes nothing).
+- **Admin UI** (`gize make admin`, ADR-006). Generates a **separate** Vite + React +
+  TypeScript SPA under `admin/`, data-driven from the manifest: one generic `Resource`
+  component renders List/Create/Edit/Delete for every resource, with search, pagination, and
+  forms validated by Zod schemas that mirror the backend `validator` rules. Auth uses the
+  existing JWT login; the app reaches the API through a Vite dev proxy (`/api`), so the
+  backend needs no CORS or other changes — the admin is a fully separable artifact.
+  `admin/src/resources.ts` (the descriptors) is derived and refreshed by `gize make admin`
+  and `gize sync`. Verified end-to-end in a headless browser (Playwright + Chrome): login,
+  list, create (incl. a `belongs_to` FK) and delete all work against the running backend;
+  the generated app builds under strict `tsc` and `vite build`.
+- **OpenAPI generation** (ADR-010). `gize new --openapi` (or `features.openapi` in `gize.toml`)
+  generates an OpenAPI 3.0.3 spec **from the manifest + DTOs** — the same source of truth the
+  CRUD generator uses — so the spec matches the routes by construction (no drift). The app
+  serves it at `GET /openapi.json` with a reference UI at `/docs`. The spec covers every
+  resource's CRUD plus `users` register/login, marks write routes as bearer-secured, hides
+  `password` from responses, and includes relationship FK columns. It is a derived artifact:
+  `gize make crud` and `gize sync` refresh it automatically from the current manifest.
+
 ## [0.6.1] - 2026-07-06 — Alpha
 
 The Alpha phase (see `docs/roadmap.md`): the manifest-driven workflow, authentication,

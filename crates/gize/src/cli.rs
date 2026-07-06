@@ -34,6 +34,12 @@ pub enum Command {
         /// Skip the built-in `users` resource (model, CRUD and migration).
         #[arg(long)]
         no_user: bool,
+        /// Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`).
+        #[arg(long)]
+        openapi: bool,
+        /// Target database: `postgres` (default) or `sqlite` (ADR-015).
+        #[arg(long, default_value = "postgres")]
+        database: String,
         #[command(flatten)]
         flags: GenFlags,
     },
@@ -59,6 +65,10 @@ pub enum Command {
     Fmt,
     /// Check the project (wrapper around clippy/check).
     Check,
+    /// A plugin subcommand: `gize <name> …` runs the `gize-<name>` executable on PATH
+    /// (ADR-008, v0). The first element is the plugin name, the rest are its arguments.
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
@@ -94,9 +104,10 @@ pub enum MakeCommand {
         #[command(flatten)]
         flags: GenFlags,
     },
-    /// Generate an admin interface for a model (Beta).
+    /// Generate the admin SPA (a separate Vite + React app) for all resources (Beta).
     Admin {
-        name: String,
+        /// Optional resource name (informational; the admin is generated for every resource).
+        name: Option<String>,
         #[command(flatten)]
         flags: GenFlags,
     },

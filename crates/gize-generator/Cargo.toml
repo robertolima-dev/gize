@@ -12,4 +12,7 @@ categories = ["development-tools"]
 [dependencies]
 gize-core.workspace = true
 gize-templates.workspace = true
+gize-openapi.workspace = true
+gize-admin.workspace = true
 anyhow.workspace = true
+serde_json.workspace = true

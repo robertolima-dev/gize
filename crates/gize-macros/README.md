@@ -10,9 +10,9 @@
 prefers **generated, readable source code** over macros that hide logic. Macros are reserved
 strictly for declarative metadata, never for hiding behavior.
 
-> **Status:** placeholder. No macros are exported yet — the crate exists so the name is
-> reserved and it participates in the workspace and CI. Macros will be added only when a
-> concrete, boilerplate-heavy need is proven.
+> **Status:** reserved. No macros are exported yet; the crate exists so the name is taken and
+> it participates in the workspace and CI. Macros will be added only when a concrete,
+> boilerplate-heavy need is proven.
 
 ## Part of the Gize workspace
 

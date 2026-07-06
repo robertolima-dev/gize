@@ -6,8 +6,8 @@
 //! Placeholders (`__NAME__`, `__TABLE__`, ...) are substituted via `replace` to avoid
 //! escaping the many braces in the generated Rust.
 
-use gize_core::ModelSpec;
 use gize_core::naming::table_name;
+use gize_core::{Dialect, ModelSpec};
 
 /// Apply the substitutions common to every CRUD file.
 fn base(template: &str, model: &ModelSpec) -> String {
@@ -101,8 +101,9 @@ __FIELDS__
     .replace("__FIELDS__", &fields)
 }
 
-/// `error.rs`: a typed error that maps to HTTP responses.
-pub fn error_rs(model: &ModelSpec) -> String {
+/// `error.rs`: a typed error that maps to HTTP responses. The `dialect` chooses the
+/// integrity-error codes mapped to 409 (ADR-015).
+pub fn error_rs(model: &ModelSpec, dialect: Dialect) -> String {
     base(
         r#"use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -126,11 +127,11 @@ impl From<sqlx::Error> for Error {
         if let sqlx::Error::RowNotFound = error {
             return Error::NotFound;
         }
-        // Map Postgres integrity violations to client errors instead of a generic 500.
+        // Map database integrity violations to client errors instead of a generic 500.
         if let sqlx::Error::Database(ref db) = error {
             match db.code().as_deref() {
-                Some("23505") => return Error::Conflict,   // unique_violation
-                Some("23503") => return Error::ForeignKey, // foreign_key_violation
+                Some("__UNIQUE_CODE__") => return Error::Conflict,   // unique violation
+                Some("__FK_CODE__") => return Error::ForeignKey, // foreign-key violation
                 _ => {}
             }
         }
@@ -162,51 +163,67 @@ impl IntoResponse for Error {
 "#,
         model,
     )
+    .replace("__UNIQUE_CODE__", dialect.unique_violation_code())
+    .replace("__FK_CODE__", dialect.foreign_key_violation_code())
 }
 
-/// `repository.rs`: SQLx persistence.
-pub fn repository_rs(model: &ModelSpec) -> String {
-    let columns = model
-        .fields
-        .iter()
-        .map(|f| f.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let placeholders = (1..=model.fields.len())
-        .map(|i| format!("${i}"))
+/// `repository.rs`: SQLx persistence. The `dialect` chooses the pool type, bind placeholders
+/// and — on SQLite, which has no `gen_random_uuid()` — whether the app supplies `id` on insert
+/// (ADR-015).
+pub fn repository_rs(model: &ModelSpec, dialect: Dialect) -> String {
+    // On SQLite the app generates `id`; on Postgres the database default does.
+    let id_bind = if dialect.app_generates_id() {
+        "        .bind(uuid::Uuid::new_v4())\n"
+    } else {
+        ""
+    };
+    let insert_cols: Vec<&str> = model.fields.iter().map(|f| f.name.as_str()).collect();
+    let columns = if dialect.app_generates_id() {
+        // `id` first (at $1/?1), then the fields (shifted by one).
+        std::iter::once("id")
+            .chain(insert_cols.iter().copied())
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        insert_cols.join(", ")
+    };
+    let placeholder_count = model.fields.len() + if dialect.app_generates_id() { 1 } else { 0 };
+    let placeholders = (1..=placeholder_count)
+        .map(|i| dialect.placeholder(i))
         .collect::<Vec<_>>()
         .join(", ");
     let update_set = model
         .fields
         .iter()
         .enumerate()
-        .map(|(i, f)| format!("{} = ${}", f.name, i + 1))
+        .map(|(i, f)| format!("{} = {}", f.name, dialect.placeholder(i + 1)))
         .collect::<Vec<_>>()
         .join(", ");
-    let id_placeholder = model.fields.len() + 1;
-    let create_binds = create_binds(model);
-    let update_binds = format!("{create_binds}\n        .bind(id)");
+    let id_placeholder = dialect.placeholder(model.fields.len() + 1);
+    let field_binds = create_binds(model);
+    let create_binds = format!("{id_bind}{field_binds}");
+    let update_binds = format!("{field_binds}\n        .bind(id)");
 
     base(
-        r#"use sqlx::PgPool;
+        r#"use sqlx::__POOL__;
 
 use super::dto::{Create__NAME__, Update__NAME__};
 use super::model::__NAME__;
 
-pub async fn list(pool: &PgPool) -> Result<Vec<__NAME__>, sqlx::Error> {
+pub async fn list(pool: &__POOL__) -> Result<Vec<__NAME__>, sqlx::Error> {
     sqlx::query_as::<_, __NAME__>("SELECT * FROM __TABLE__ ORDER BY created_at DESC")
         .fetch_all(pool)
         .await
 }
 
-pub async fn find(pool: &PgPool, id: uuid::Uuid) -> Result<__NAME__, sqlx::Error> {
-    sqlx::query_as::<_, __NAME__>("SELECT * FROM __TABLE__ WHERE id = $1")
+pub async fn find(pool: &__POOL__, id: uuid::Uuid) -> Result<__NAME__, sqlx::Error> {
+    sqlx::query_as::<_, __NAME__>("SELECT * FROM __TABLE__ WHERE id = __P1__")
         .bind(id)
         .fetch_one(pool)
         .await
 }
 
-pub async fn create(pool: &PgPool, input: &Create__NAME__) -> Result<__NAME__, sqlx::Error> {
+pub async fn create(pool: &__POOL__, input: &Create__NAME__) -> Result<__NAME__, sqlx::Error> {
     sqlx::query_as::<_, __NAME__>(
         "INSERT INTO __TABLE__ (__COLUMNS__) VALUES (__PLACEHOLDERS__) RETURNING *",
     )
@@ -216,20 +233,20 @@ __CREATE_BINDS__
 }
 
 pub async fn update(
-    pool: &PgPool,
+    pool: &__POOL__,
     id: uuid::Uuid,
     input: &Update__NAME__,
 ) -> Result<__NAME__, sqlx::Error> {
     sqlx::query_as::<_, __NAME__>(
-        "UPDATE __TABLE__ SET __UPDATE_SET__, updated_at = now() WHERE id = $__ID_PH__ RETURNING *",
+        "UPDATE __TABLE__ SET __UPDATE_SET__, updated_at = __NOW__ WHERE id = __ID_PH__ RETURNING *",
     )
 __UPDATE_BINDS__
         .fetch_one(pool)
         .await
 }
 
-pub async fn delete(pool: &PgPool, id: uuid::Uuid) -> Result<(), sqlx::Error> {
-    let result = sqlx::query("DELETE FROM __TABLE__ WHERE id = $1")
+pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), sqlx::Error> {
+    let result = sqlx::query("DELETE FROM __TABLE__ WHERE id = __P1__")
         .bind(id)
         .execute(pool)
         .await?;
@@ -241,50 +258,54 @@ pub async fn delete(pool: &PgPool, id: uuid::Uuid) -> Result<(), sqlx::Error> {
 "#,
         model,
     )
+    .replace("__POOL__", dialect.pool_type())
+    .replace("__P1__", &dialect.placeholder(1))
+    .replace("__NOW__", dialect.now_expr())
     .replace("__COLUMNS__", &columns)
     .replace("__PLACEHOLDERS__", &placeholders)
     .replace("__UPDATE_SET__", &update_set)
-    .replace("__ID_PH__", &id_placeholder.to_string())
+    .replace("__ID_PH__", &id_placeholder)
     .replace("__CREATE_BINDS__", &create_binds)
     .replace("__UPDATE_BINDS__", &update_binds)
 }
 
 /// `service.rs`: business layer that maps `sqlx::Error` to the module error.
-pub fn service_rs(model: &ModelSpec) -> String {
+pub fn service_rs(model: &ModelSpec, dialect: Dialect) -> String {
     base(
-        r#"use sqlx::PgPool;
+        r#"use sqlx::__POOL__;
 
 use super::dto::{Create__NAME__, Update__NAME__};
 use super::error::Error;
 use super::model::__NAME__;
 use super::repository;
 
-pub async fn list(pool: &PgPool) -> Result<Vec<__NAME__>, Error> {
+pub async fn list(pool: &__POOL__) -> Result<Vec<__NAME__>, Error> {
     repository::list(pool).await.map_err(Error::from)
 }
 
-pub async fn find(pool: &PgPool, id: uuid::Uuid) -> Result<__NAME__, Error> {
+pub async fn find(pool: &__POOL__, id: uuid::Uuid) -> Result<__NAME__, Error> {
     repository::find(pool, id).await.map_err(Error::from)
 }
 
-pub async fn create(pool: &PgPool, input: &Create__NAME__) -> Result<__NAME__, Error> {
+pub async fn create(pool: &__POOL__, input: &Create__NAME__) -> Result<__NAME__, Error> {
     repository::create(pool, input).await.map_err(Error::from)
 }
 
 pub async fn update(
-    pool: &PgPool,
+    pool: &__POOL__,
     id: uuid::Uuid,
     input: &Update__NAME__,
 ) -> Result<__NAME__, Error> {
     repository::update(pool, id, input).await.map_err(Error::from)
 }
 
-pub async fn delete(pool: &PgPool, id: uuid::Uuid) -> Result<(), Error> {
+pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), Error> {
     repository::delete(pool, id).await.map_err(Error::from)
 }
 "#,
         model,
     )
+    .replace("__POOL__", dialect.pool_type())
 }
 
 /// `handler.rs`: Axum handlers wiring HTTP to the service.
@@ -420,7 +441,7 @@ mod tests {
 
     #[test]
     fn repository_builds_sql() {
-        let out = repository_rs(&product());
+        let out = repository_rs(&product(), Dialect::Postgres);
         assert!(out.contains("INSERT INTO products (name, price, active) VALUES ($1, $2, $3)"));
         assert!(
             out.contains(
@@ -429,6 +450,19 @@ mod tests {
         );
         assert!(out.contains(".bind(input.name.clone())"));
         assert!(out.contains(".bind(id)"));
+    }
+
+    #[test]
+    fn repository_follows_the_sqlite_dialect() {
+        let out = repository_rs(&product(), Dialect::Sqlite);
+        assert!(out.contains("use sqlx::SqlitePool;"));
+        // SQLite has no gen_random_uuid(): the app supplies id, columns/placeholders shift.
+        assert!(
+            out.contains("INSERT INTO products (id, name, price, active) VALUES (?1, ?2, ?3, ?4)")
+        );
+        assert!(out.contains(".bind(uuid::Uuid::new_v4())"));
+        assert!(out.contains("WHERE id = ?1")); // find/delete use ?1, not $1
+        assert!(out.contains("updated_at = strftime"));
     }
 
     #[test]

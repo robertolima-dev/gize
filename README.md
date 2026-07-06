@@ -73,25 +73,30 @@ What you get is normal Rust you can read and edit: Gize writes the boring 80%, y
 
 ## Project status
 
-**MVP.** The core generator and CLI are functional and verified end-to-end against a real
-PostgreSQL database (create → migrate → serve → CRUD over HTTP).
+**Beta.** On top of the MVP + Alpha, the Beta adds the Admin UI, OpenAPI, a second database
+(SQLite) and a plugin API — all verified end-to-end (the Admin CRUD is exercised in a real
+headless browser; SQLite runs full CRUD with auth and relationships).
 
 | Command | State | What it does |
 | --- | --- | --- |
-| `gize new` | ✅ | Scaffold a new project (with a built-in `users` resource) |
+| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite`, `--openapi`) |
 | `gize make app` | ✅ | Scaffold a module and wire it in |
 | `gize make model` | ✅ | Generate a model + migration |
-| `gize make crud` | ✅ | Generate a full CRUD resource |
-| `gize migrate` | ✅ | Apply / inspect migrations |
+| `gize make crud` | ✅ | Generate a full CRUD resource (incl. `belongs_to`) |
+| `gize make migration` | ✅ | Blank (named) or model-diff `ALTER` migrations |
+| `gize make admin` | ✅ | Generate a separate React admin SPA for all resources |
+| `gize sync` | ✅ | Reconcile the project from `gize.toml` |
+| `gize migrate` | ✅ | Apply / inspect migrations (Postgres or SQLite) |
 | `gize serve` | ✅ | Build and run the app |
+| `gize fmt` / `gize check` | ✅ | rustfmt / clippy wrappers |
 | `gize doctor` | ✅ | Diagnose environment/project |
-| `gize make migration` | 🚧 | Standalone / diff migrations (planned) |
-| `gize sync` | 🚧 | Reconcile from `gize.toml` (Alpha) |
-| `gize make admin` | 🚧 | Admin UI (Beta) |
-| `gize fmt` / `gize check` | 🚧 | rustfmt / clippy wrappers (planned) |
+| `gize <plugin>` | ✅ | Run a `gize-<name>` plugin (plugin API v0) |
 
-See [`docs/roadmap.md`](./docs/roadmap.md) for the full plan (MVP → Alpha → Beta → RC →
-v1.0 → v2.0).
+New in Beta: **`gize make admin`** (Vite + React + TS SPA, data-driven from the manifest),
+**OpenAPI** generation (`--openapi` → `/openapi.json` + `/docs`), **SQLite** behind a database
+seam (`gize new --database sqlite`), and a **plugin API** (`gize-<name>` subcommands). See
+[`docs/roadmap.md`](./docs/roadmap.md) for the full plan (MVP → Alpha → Beta → RC → v1.0 →
+v2.0).
 
 ## Installation
 

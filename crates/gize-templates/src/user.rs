@@ -9,7 +9,7 @@
 //! `is_admin` is included from day one so a future admin panel / `gize-auth` has a flag to
 //! gate access on (see BACKLOG.md).
 
-use gize_core::{Field, FieldType, ModelSpec};
+use gize_core::{Dialect, Field, FieldType, ModelSpec};
 
 /// The canonical `User` model `gize new` generates: the minimal, auth-ready field set.
 ///
@@ -110,7 +110,7 @@ pub struct TokenResponse {
 
 /// `error.rs` for users: the generic errors plus `Unauthorized` (bad credentials) and
 /// `Internal` (hashing/token failures), so the auth handlers map cleanly to HTTP.
-pub fn error_rs() -> String {
+pub fn error_rs(dialect: Dialect) -> String {
     r#"use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
@@ -135,11 +135,11 @@ impl From<sqlx::Error> for Error {
         if let sqlx::Error::RowNotFound = error {
             return Error::NotFound;
         }
-        // Map Postgres integrity violations to client errors instead of a generic 500.
+        // Map database integrity violations to client errors instead of a generic 500.
         if let sqlx::Error::Database(ref db) = error {
             match db.code().as_deref() {
-                Some("23505") => return Error::Conflict,   // unique_violation
-                Some("23503") => return Error::ForeignKey, // foreign_key_violation
+                Some("__UNIQUE_CODE__") => return Error::Conflict,   // unique violation
+                Some("__FK_CODE__") => return Error::ForeignKey, // foreign-key violation
                 _ => {}
             }
         }
@@ -171,12 +171,13 @@ impl IntoResponse for Error {
     }
 }
 "#
-    .to_string()
+    .replace("__UNIQUE_CODE__", dialect.unique_violation_code())
+    .replace("__FK_CODE__", dialect.foreign_key_violation_code())
 }
 
 /// `handler.rs` for users: the CRUD handlers (hashing the password on create/update) plus
 /// public `register` and `login` handlers that issue a token (ADR-013).
-pub fn handler_rs() -> String {
+pub fn handler_rs(dialect: Dialect) -> String {
     r#"use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -260,7 +261,7 @@ pub async fn login(
     Json(input): Json<LoginRequest>,
 ) -> Result<Json<TokenResponse>, Error> {
     input.validate()?;
-    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = __P1__")
         .bind(&input.email)
         .fetch_optional(&state.db)
         .await?
@@ -272,7 +273,7 @@ pub async fn login(
     Ok(Json(TokenResponse { token }))
 }
 "#
-    .to_string()
+    .replace("__P1__", &dialect.placeholder(1))
 }
 
 /// `routes.rs` for users: public register/login and reads, with the write routes guarded by
@@ -307,20 +308,30 @@ pub fn routes() -> Router<AppState> {
 
 /// `CREATE TABLE users` migration. Adds a `UNIQUE` constraint on `email` and defaults
 /// `is_admin` to `false` — both natural for a users table and not covered by the generic
-/// model-driven migration (which keeps every column plain `NOT NULL`).
-pub fn migration_sql() -> String {
-    r#"-- Migration: create users
+/// model-driven migration (which keeps every column plain `NOT NULL`). Dialect-aware (ADR-015):
+/// the primary key, `is_admin` type/default and timestamps follow `dialect`.
+pub fn migration_sql(dialect: Dialect) -> String {
+    let bool_ty = dialect.column_type(FieldType::Bool);
+    // Postgres has a `false` literal; SQLite stores booleans as `0`/`1`.
+    let false_default = match dialect {
+        Dialect::Postgres => "false",
+        Dialect::Sqlite => "0",
+    };
+    let ts = dialect.timestamp_type_default();
+    format!(
+        r#"-- Migration: create users
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    {id_pk},
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
-    is_admin BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    is_admin {bool_ty} NOT NULL DEFAULT {false_default},
+    created_at {ts},
+    updated_at {ts}
 );
-"#
-    .to_string()
+"#,
+        id_pk = dialect.id_pk_ddl(),
+    )
 }
 
 #[cfg(test)]
@@ -347,7 +358,7 @@ mod tests {
 
     #[test]
     fn migration_creates_users_with_admin_flag() {
-        let out = migration_sql();
+        let out = migration_sql(Dialect::Postgres);
         assert!(out.contains("CREATE TABLE users"));
         assert!(out.contains("email TEXT NOT NULL UNIQUE"));
         assert!(out.contains("is_admin BOOLEAN NOT NULL DEFAULT false"));

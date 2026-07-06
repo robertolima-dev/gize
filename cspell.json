@@ -39,7 +39,21 @@
     "pbkdf2",
     "PASETO",
     "jsonwebtoken",
-    "dotenvy"
+    "dotenvy",
+    "utoipa",
+    "Scalar",
+    "TanStack",
+    "Maud",
+    "HTMX",
+    "Vite",
+    "shadcn",
+    "Zod",
+    "dylib",
+    "SQLSTATE",
+    "MariaDB",
+    "SQLite",
+    "abi",
+    "Firecracker"
   ],
   "ignorePaths": [
     "target/**",

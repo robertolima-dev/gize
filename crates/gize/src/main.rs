@@ -21,8 +21,10 @@ fn main() -> Result<()> {
         Command::New {
             name,
             no_user,
+            openapi,
+            database,
             flags,
-        } => commands::new_project(&name, no_user, flags),
+        } => commands::new_project(&name, no_user, openapi, &database, flags),
 
         Command::Make(make) => match make {
             MakeCommand::Model {
@@ -39,10 +41,7 @@ fn main() -> Result<()> {
             MakeCommand::Migration { name, flags } => {
                 commands::make_migration(name.as_deref(), flags)
             }
-            MakeCommand::Admin { name, .. } => commands::not_yet(
-                &format!("make admin {name}"),
-                "generate an admin UI (List/Create/Edit/Show/Delete) for the model",
-            ),
+            MakeCommand::Admin { name, flags } => commands::make_admin(name.as_deref(), flags),
         },
 
         Command::Migrate { status } => commands::migrate(status),
@@ -51,5 +50,6 @@ fn main() -> Result<()> {
         Command::Doctor => commands::doctor(),
         Command::Fmt => commands::fmt(),
         Command::Check => commands::check(),
+        Command::External(args) => commands::run_external(args),
     }
 }
