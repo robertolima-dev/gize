@@ -4,6 +4,7 @@
 //! migration to `minijinja` templates loaded from disk; the function boundary here is
 //! designed so that swap is internal and does not change the generator's API.
 
+pub mod auth;
 pub mod crud;
 pub mod model;
 pub mod module;

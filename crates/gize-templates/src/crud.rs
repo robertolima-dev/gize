@@ -303,23 +303,32 @@ pub async fn delete(
     )
 }
 
-/// `routes.rs`: the resource's router.
+/// `routes.rs`: the resource's router. Reads (`GET`) are public; writes (`POST`/`PUT`/
+/// `DELETE`) are guarded by the auth middleware (ADR-013).
 pub fn routes_rs(model: &ModelSpec) -> String {
     base(
-        r#"use axum::Router;
-use axum::routing::get;
+        r#"use axum::routing::{get, post};
+use axum::{middleware, Router};
 
 use super::handler;
+use crate::auth::require_auth;
 use crate::state::AppState;
 
-/// Routes for the `__TABLE__` resource.
+/// Routes for the `__TABLE__` resource. Mutating routes require a valid bearer token.
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/__TABLE__", get(handler::list).post(handler::create))
+    let public = Router::new()
+        .route("/__TABLE__", get(handler::list))
+        .route("/__TABLE__/:id", get(handler::show));
+
+    let protected = Router::new()
+        .route("/__TABLE__", post(handler::create))
         .route(
             "/__TABLE__/:id",
-            get(handler::show).put(handler::update).delete(handler::delete),
+            axum::routing::put(handler::update).delete(handler::delete),
         )
+        .route_layer(middleware::from_fn(require_auth));
+
+    public.merge(protected)
 }
 "#,
         model,

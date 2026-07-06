@@ -7,6 +7,6 @@ database = "postgres"
 orm = "sqlx"
 
 [features]
-authentication = false
+authentication = true
 admin = false
 openapi = false

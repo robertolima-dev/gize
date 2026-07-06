@@ -13,6 +13,16 @@ ADR-013 (auth) and ADR-014 (relationships) added.
 
 ### Added
 
+- **Authentication, generated into every project** (ADR-013). `gize new` now emits a
+  `src/auth` module with Argon2id password hashing and stateless JWT (HS256): `hash_password`
+  / `verify_password`, `issue_token` / `verify_token`, and a `require_auth` middleware.
+  Mutating routes (`POST`/`PUT`/`DELETE`) are guarded; reads stay public. The built-in `users`
+  resource gains public `POST /users/register` and `POST /users/login` (returning a token) and
+  hashes the password on every write. The signing secret is read from `GIZE_JWT_SECRET` (added
+  to `.env.example`, reported by `gize doctor`) — never from `gize.toml`. Verified end-to-end
+  against Postgres: guarded routes return 401 without a token and 201 with one; login rejects
+  bad credentials; passwords never appear in responses. A security review (recorded in
+  ADR-013) fixed a privilege-escalation where `register` accepted `is_admin`.
 - **`belongs_to` relationships** in models (ADR-014). Declare a foreign key with a field
   token: `gize make crud Post title:String author:belongs_to:users`. The generated migration
   gets an `author_id UUID NOT NULL` column plus a `FOREIGN KEY (author_id) REFERENCES

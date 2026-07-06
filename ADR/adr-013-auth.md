@@ -71,3 +71,31 @@ sub-config with `token_type`) is noted but not built now.
 - **A security review is required before this ships** (weak-secret handling, timing-safe
   verify, no token/hash leakage in logs or responses, correct `exp` validation).
 - `GIZE_JWT_SECRET` is added to `.env.example` and checked by `gize doctor`.
+
+## Security review (Alpha, 2026-07-06)
+
+Performed on the generated auth code before shipping WS5.
+
+**Fixed:**
+
+- **Privilege escalation via `register`.** The public `register` handler accepted `is_admin`
+  from the request body, letting any client self-grant admin. `register` now forces
+  `is_admin = false`; admins are created only through the guarded `POST /users`.
+- **Password never serialized.** The `User` model keeps `#[serde(skip_serializing)]` on
+  `password`; verified end-to-end that `GET /users` responses contain no password/hash.
+- **Passwords hashed on every write path.** `register`, `create` and `update` all run
+  `hash_password` (Argon2id); no plaintext reaches the database.
+- **Token validation.** `exp` is enforced by `jsonwebtoken::Validation::default()`; an invalid
+  or expired token yields `401`, verified at runtime.
+
+**Accepted for Alpha / deferred (documented, not blocking):**
+
+- **Public reads.** `GET /users` (and list/show generally) are unauthenticated, consistent
+  with the "reads public, writes guarded" model. This exposes user names/emails; tightening
+  read authorization is a Beta concern (roles/policies).
+- **Login user-enumeration timing.** A login for a non-existent email returns before any hash
+  verification, a minor timing side-channel. A constant-time dummy verify is a follow-up.
+- **No login rate limiting / password-strength policy.** Out of scope for the Alpha; brute
+  force and weak-password mitigation are tracked for later (rate limiting; validation layer).
+- **Default dev secret.** `.env.example` ships `GIZE_JWT_SECRET=dev-only-change-me` with a
+  note to replace it; `gize doctor` reports whether it is set.

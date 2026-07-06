@@ -339,8 +339,9 @@ pub fn sync(flags: GenFlags) -> Result<()> {
         return Ok(());
     }
 
-    // 1. Desired code files for every declared module (deterministic; no timestamps).
-    let mut plan = Plan::new();
+    // 1. Desired code files for every declared module (deterministic; no timestamps). The
+    //    auth module is part of the skeleton the CRUD routes depend on, so reconcile it too.
+    let mut plan = Plan::new().create("src/auth/mod.rs", scaffold::auth_mod_rs());
     for module in &manifest.modules {
         plan = plan.extend(
             scaffold::module_code(module)
@@ -522,8 +523,12 @@ pub fn doctor() -> Result<()> {
         Path::new("gize.toml").exists(),
     );
     report("`.env` file present", Path::new(".env").exists());
-    // `.env` is auto-loaded at startup, so this reflects the effective value.
+    // `.env` is auto-loaded at startup, so these reflect the effective values.
     report("DATABASE_URL set", std::env::var("DATABASE_URL").is_ok());
+    report(
+        "GIZE_JWT_SECRET set (auth token signing)",
+        std::env::var("GIZE_JWT_SECRET").is_ok(),
+    );
 
     Ok(())
 }

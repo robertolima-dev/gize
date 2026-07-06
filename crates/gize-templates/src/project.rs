@@ -20,6 +20,8 @@ chrono = {{ version = "0.4", features = ["serde"] }}
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+argon2 = "0.5"
+jsonwebtoken = "9"
 "#
     )
 }
@@ -36,13 +38,16 @@ pub fn env_example(name: &str) -> String {
     format!(
         "# Runtime configuration for {name} (copy to .env)\n\
          DATABASE_URL=postgres://postgres:postgres@localhost:5432/{name}\n\
-         PORT=8080\n"
+         PORT=8080\n\
+         # Secret used to sign auth tokens (JWT/HS256). Use a long random value in production.\n\
+         GIZE_JWT_SECRET=dev-only-change-me\n"
     )
 }
 
 /// `src/main.rs`: binary entrypoint that builds state and serves the router.
 pub fn main_rs() -> String {
     r#"mod app;
+mod auth;
 mod config;
 mod router;
 mod state;

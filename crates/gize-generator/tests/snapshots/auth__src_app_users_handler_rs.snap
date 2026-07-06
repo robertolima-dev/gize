@@ -1,0 +1,88 @@
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+
+use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
+use super::error::Error;
+use super::model::User;
+use super::service;
+use crate::auth::{hash_password, issue_token, verify_password};
+use crate::state::AppState;
+
+pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
+    Ok(Json(service::list(&state.db).await?))
+}
+
+pub async fn show(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<User>, Error> {
+    Ok(Json(service::find(&state.db, id).await?))
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    Json(input): Json<CreateUser>,
+) -> Result<(StatusCode, Json<User>), Error> {
+    let stored = CreateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        ..input
+    };
+    let user = service::create(&state.db, &stored).await?;
+    Ok((StatusCode::CREATED, Json(user)))
+}
+
+pub async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+    Json(input): Json<UpdateUser>,
+) -> Result<Json<User>, Error> {
+    let stored = UpdateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        ..input
+    };
+    Ok(Json(service::update(&state.db, id, &stored).await?))
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<StatusCode, Error> {
+    service::delete(&state.db, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Public: register a new user (hashing the password) and return a session token.
+///
+/// `is_admin` is forced to `false` here — this is a public endpoint, so a client must not be
+/// able to grant itself admin. Admins are created through the guarded `POST /users` route.
+pub async fn register(
+    State(state): State<AppState>,
+    Json(input): Json<CreateUser>,
+) -> Result<(StatusCode, Json<TokenResponse>), Error> {
+    let stored = CreateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        is_admin: false,
+        ..input
+    };
+    let user = service::create(&state.db, &stored).await?;
+    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    Ok((StatusCode::CREATED, Json(TokenResponse { token })))
+}
+
+/// Public: exchange email + password for a session token.
+pub async fn login(
+    State(state): State<AppState>,
+    Json(input): Json<LoginRequest>,
+) -> Result<Json<TokenResponse>, Error> {
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        .bind(&input.email)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(Error::Unauthorized)?;
+    if !verify_password(&input.password, &user.password) {
+        return Err(Error::Unauthorized);
+    }
+    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    Ok(Json(TokenResponse { token }))
+}

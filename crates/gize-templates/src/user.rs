@@ -60,6 +60,209 @@ pub struct User {
     .to_string()
 }
 
+/// `dto.rs` for users: the generic Create/Update payloads plus a `LoginRequest` and the
+/// `TokenResponse` returned by register/login.
+pub fn dto_rs() -> String {
+    r#"use serde::{Deserialize, Serialize};
+
+/// Payload to create a `User`. `password` is plaintext on the wire and hashed before storage.
+#[derive(Debug, Deserialize)]
+pub struct CreateUser {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+    pub is_admin: bool,
+}
+
+/// Payload to update a `User`.
+#[derive(Debug, Deserialize)]
+pub struct UpdateUser {
+    pub name: String,
+    pub email: String,
+    pub password: String,
+    pub is_admin: bool,
+}
+
+/// Credentials for `POST /users/login`.
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+/// A signed session token returned by register/login.
+#[derive(Debug, Serialize)]
+pub struct TokenResponse {
+    pub token: String,
+}
+"#
+    .to_string()
+}
+
+/// `error.rs` for users: the generic errors plus `Unauthorized` (bad credentials) and
+/// `Internal` (hashing/token failures), so the auth handlers map cleanly to HTTP.
+pub fn error_rs() -> String {
+    r#"use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+
+/// Errors returned by the `users` resource.
+#[derive(Debug)]
+pub enum Error {
+    NotFound,
+    Unauthorized,
+    Internal,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
+        match error {
+            sqlx::Error::RowNotFound => Error::NotFound,
+            other => Error::Database(other),
+        }
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()),
+            Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string()),
+            Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+        };
+        (status, message).into_response()
+    }
+}
+"#
+    .to_string()
+}
+
+/// `handler.rs` for users: the CRUD handlers (hashing the password on create/update) plus
+/// public `register` and `login` handlers that issue a token (ADR-013).
+pub fn handler_rs() -> String {
+    r#"use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+
+use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
+use super::error::Error;
+use super::model::User;
+use super::service;
+use crate::auth::{hash_password, issue_token, verify_password};
+use crate::state::AppState;
+
+pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
+    Ok(Json(service::list(&state.db).await?))
+}
+
+pub async fn show(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<Json<User>, Error> {
+    Ok(Json(service::find(&state.db, id).await?))
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    Json(input): Json<CreateUser>,
+) -> Result<(StatusCode, Json<User>), Error> {
+    let stored = CreateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        ..input
+    };
+    let user = service::create(&state.db, &stored).await?;
+    Ok((StatusCode::CREATED, Json(user)))
+}
+
+pub async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+    Json(input): Json<UpdateUser>,
+) -> Result<Json<User>, Error> {
+    let stored = UpdateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        ..input
+    };
+    Ok(Json(service::update(&state.db, id, &stored).await?))
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<uuid::Uuid>,
+) -> Result<StatusCode, Error> {
+    service::delete(&state.db, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Public: register a new user (hashing the password) and return a session token.
+///
+/// `is_admin` is forced to `false` here — this is a public endpoint, so a client must not be
+/// able to grant itself admin. Admins are created through the guarded `POST /users` route.
+pub async fn register(
+    State(state): State<AppState>,
+    Json(input): Json<CreateUser>,
+) -> Result<(StatusCode, Json<TokenResponse>), Error> {
+    let stored = CreateUser {
+        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        is_admin: false,
+        ..input
+    };
+    let user = service::create(&state.db, &stored).await?;
+    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    Ok((StatusCode::CREATED, Json(TokenResponse { token })))
+}
+
+/// Public: exchange email + password for a session token.
+pub async fn login(
+    State(state): State<AppState>,
+    Json(input): Json<LoginRequest>,
+) -> Result<Json<TokenResponse>, Error> {
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        .bind(&input.email)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(Error::Unauthorized)?;
+    if !verify_password(&input.password, &user.password) {
+        return Err(Error::Unauthorized);
+    }
+    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    Ok(Json(TokenResponse { token }))
+}
+"#
+    .to_string()
+}
+
+/// `routes.rs` for users: public register/login and reads, with the write routes guarded by
+/// the auth middleware (ADR-013).
+pub fn routes_rs() -> String {
+    r#"use axum::routing::{get, post, put};
+use axum::{middleware, Router};
+
+use super::handler;
+use crate::auth::require_auth;
+use crate::state::AppState;
+
+/// Routes for the `users` resource. `register`/`login` and reads are public; writes require
+/// a valid bearer token.
+pub fn routes() -> Router<AppState> {
+    let public = Router::new()
+        .route("/users/register", post(handler::register))
+        .route("/users/login", post(handler::login))
+        .route("/users", get(handler::list))
+        .route("/users/:id", get(handler::show));
+
+    let protected = Router::new()
+        .route("/users", post(handler::create))
+        .route("/users/:id", put(handler::update).delete(handler::delete))
+        .route_layer(middleware::from_fn(require_auth));
+
+    public.merge(protected)
+}
+"#
+    .to_string()
+}
+
 /// `CREATE TABLE users` migration. Adds a `UNIQUE` constraint on `email` and defaults
 /// `is_admin` to `false` — both natural for a users table and not covered by the generic
 /// model-driven migration (which keeps every column plain `NOT NULL`).

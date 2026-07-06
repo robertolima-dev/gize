@@ -374,3 +374,19 @@ fn record_products_in_manifest(root: &Path) {
     });
     fs::write(&path, manifest.to_toml().unwrap()).unwrap();
 }
+
+#[test]
+fn auth_and_users_slice_match_snapshots() {
+    // The security-sensitive generated code (auth module + the users slice that hashes
+    // passwords and issues tokens) is pinned so template edits are always reviewed.
+    let plan = scaffold::new_project("shop", true, TS);
+    for rel in [
+        "src/auth/mod.rs",
+        "src/app/users/handler.rs",
+        "src/app/users/routes.rs",
+        "src/app/users/dto.rs",
+        "src/app/users/error.rs",
+    ] {
+        assert_snapshot(&format!("auth__{}", slug(rel)), content(&plan, rel));
+    }
+}

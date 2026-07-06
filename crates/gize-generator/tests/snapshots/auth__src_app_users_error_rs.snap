@@ -1,0 +1,32 @@
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+
+/// Errors returned by the `users` resource.
+#[derive(Debug)]
+pub enum Error {
+    NotFound,
+    Unauthorized,
+    Internal,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for Error {
+    fn from(error: sqlx::Error) -> Self {
+        match error {
+            sqlx::Error::RowNotFound => Error::NotFound,
+            other => Error::Database(other),
+        }
+    }
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let (status, message) = match self {
+            Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
+            Error::Unauthorized => (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()),
+            Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string()),
+            Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+        };
+        (status, message).into_response()
+    }
+}
