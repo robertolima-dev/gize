@@ -2,6 +2,8 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 
+use validator::Validate;
+
 use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
 use super::error::Error;
 use super::model::User;
@@ -24,6 +26,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(input): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<User>), Error> {
+    input.validate()?;
     let stored = CreateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         ..input
@@ -37,6 +40,7 @@ pub async fn update(
     Path(id): Path<uuid::Uuid>,
     Json(input): Json<UpdateUser>,
 ) -> Result<Json<User>, Error> {
+    input.validate()?;
     let stored = UpdateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         ..input
@@ -60,6 +64,7 @@ pub async fn register(
     State(state): State<AppState>,
     Json(input): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<TokenResponse>), Error> {
+    input.validate()?;
     let stored = CreateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         is_admin: false,
@@ -75,6 +80,7 @@ pub async fn login(
     State(state): State<AppState>,
     Json(input): Json<LoginRequest>,
 ) -> Result<Json<TokenResponse>, Error> {
+    input.validate()?;
     let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
         .bind(&input.email)
         .fetch_optional(&state.db)

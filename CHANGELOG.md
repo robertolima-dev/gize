@@ -13,6 +13,13 @@ ADR-013 (auth) and ADR-014 (relationships) added.
 
 ### Added
 
+- **Request validation and richer error mapping** in generated resources. DTOs now derive
+  `validator::Validate`: `String` fields must be non-empty, and the `users` DTOs validate
+  email format and a minimum password length. Handlers validate the payload before touching
+  the database, returning **422 Unprocessable Entity** with a readable message. The resource
+  error type gained `Conflict` and `Validation` variants, and a Postgres unique violation
+  (SQLSTATE 23505, e.g. a duplicate email) now maps to **409 Conflict** instead of a generic
+  500. Verified end-to-end: invalid email / short password → 422, duplicate email → 409.
 - **Authentication, generated into every project** (ADR-013). `gize new` now emits a
   `src/auth` module with Argon2id password hashing and stateless JWT (HS256): `hash_password`
   / `verify_password`, `issue_token` / `verify_token`, and a `require_auth` middleware.

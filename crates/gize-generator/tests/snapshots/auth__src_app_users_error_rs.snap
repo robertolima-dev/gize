@@ -6,16 +6,32 @@ use axum::response::{IntoResponse, Response};
 pub enum Error {
     NotFound,
     Unauthorized,
+    /// A unique constraint was violated (e.g. a duplicate email) — maps to 409.
+    Conflict,
+    /// Request payload failed validation — maps to 422.
+    Validation(String),
     Internal,
     Database(sqlx::Error),
 }
 
 impl From<sqlx::Error> for Error {
     fn from(error: sqlx::Error) -> Self {
-        match error {
-            sqlx::Error::RowNotFound => Error::NotFound,
-            other => Error::Database(other),
+        if let sqlx::Error::RowNotFound = error {
+            return Error::NotFound;
         }
+        // Postgres unique_violation (SQLSTATE 23505) -> 409 Conflict (e.g. duplicate email).
+        if let sqlx::Error::Database(ref db) = error {
+            if db.code().as_deref() == Some("23505") {
+                return Error::Conflict;
+            }
+        }
+        Error::Database(error)
+    }
+}
+
+impl From<validator::ValidationErrors> for Error {
+    fn from(errors: validator::ValidationErrors) -> Self {
+        Error::Validation(errors.to_string())
     }
 }
 
@@ -24,6 +40,8 @@ impl IntoResponse for Error {
         let (status, message) = match self {
             Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()),
+            Error::Conflict => (StatusCode::CONFLICT, "already exists".to_string()),
+            Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string()),
             Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
         };

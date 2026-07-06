@@ -1,16 +1,19 @@
 use serde::Deserialize;
+use validator::Validate;
 
 /// Payload to create a `Product`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateProduct {
+    #[validate(length(min = 1, message = "must not be empty"))]
     pub name: String,
     pub price: i32,
     pub active: bool,
 }
 
 /// Payload to update a `Product`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct UpdateProduct {
+    #[validate(length(min = 1, message = "must not be empty"))]
     pub name: String,
     pub price: i32,
     pub active: bool,

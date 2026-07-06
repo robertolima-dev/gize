@@ -64,29 +64,38 @@ pub struct User {
 /// `TokenResponse` returned by register/login.
 pub fn dto_rs() -> String {
     r#"use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 /// Payload to create a `User`. `password` is plaintext on the wire and hashed before storage.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct CreateUser {
+    #[validate(length(min = 1, message = "must not be empty"))]
     pub name: String,
+    #[validate(email(message = "must be a valid email"))]
     pub email: String,
+    #[validate(length(min = 8, message = "must be at least 8 characters"))]
     pub password: String,
     pub is_admin: bool,
 }
 
 /// Payload to update a `User`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct UpdateUser {
+    #[validate(length(min = 1, message = "must not be empty"))]
     pub name: String,
+    #[validate(email(message = "must be a valid email"))]
     pub email: String,
+    #[validate(length(min = 8, message = "must be at least 8 characters"))]
     pub password: String,
     pub is_admin: bool,
 }
 
 /// Credentials for `POST /users/login`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {
+    #[validate(email(message = "must be a valid email"))]
     pub email: String,
+    #[validate(length(min = 1, message = "must not be empty"))]
     pub password: String,
 }
 
@@ -110,16 +119,32 @@ use axum::response::{IntoResponse, Response};
 pub enum Error {
     NotFound,
     Unauthorized,
+    /// A unique constraint was violated (e.g. a duplicate email) — maps to 409.
+    Conflict,
+    /// Request payload failed validation — maps to 422.
+    Validation(String),
     Internal,
     Database(sqlx::Error),
 }
 
 impl From<sqlx::Error> for Error {
     fn from(error: sqlx::Error) -> Self {
-        match error {
-            sqlx::Error::RowNotFound => Error::NotFound,
-            other => Error::Database(other),
+        if let sqlx::Error::RowNotFound = error {
+            return Error::NotFound;
         }
+        // Postgres unique_violation (SQLSTATE 23505) -> 409 Conflict (e.g. duplicate email).
+        if let sqlx::Error::Database(ref db) = error {
+            if db.code().as_deref() == Some("23505") {
+                return Error::Conflict;
+            }
+        }
+        Error::Database(error)
+    }
+}
+
+impl From<validator::ValidationErrors> for Error {
+    fn from(errors: validator::ValidationErrors) -> Self {
+        Error::Validation(errors.to_string())
     }
 }
 
@@ -128,6 +153,8 @@ impl IntoResponse for Error {
         let (status, message) = match self {
             Error::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             Error::Unauthorized => (StatusCode::UNAUTHORIZED, "invalid credentials".to_string()),
+            Error::Conflict => (StatusCode::CONFLICT, "already exists".to_string()),
+            Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string()),
             Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
         };
@@ -144,6 +171,8 @@ pub fn handler_rs() -> String {
     r#"use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+
+use validator::Validate;
 
 use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
 use super::error::Error;
@@ -167,6 +196,7 @@ pub async fn create(
     State(state): State<AppState>,
     Json(input): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<User>), Error> {
+    input.validate()?;
     let stored = CreateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         ..input
@@ -180,6 +210,7 @@ pub async fn update(
     Path(id): Path<uuid::Uuid>,
     Json(input): Json<UpdateUser>,
 ) -> Result<Json<User>, Error> {
+    input.validate()?;
     let stored = UpdateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         ..input
@@ -203,6 +234,7 @@ pub async fn register(
     State(state): State<AppState>,
     Json(input): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<TokenResponse>), Error> {
+    input.validate()?;
     let stored = CreateUser {
         password: hash_password(&input.password).map_err(|_| Error::Internal)?,
         is_admin: false,
@@ -218,6 +250,7 @@ pub async fn login(
     State(state): State<AppState>,
     Json(input): Json<LoginRequest>,
 ) -> Result<Json<TokenResponse>, Error> {
+    input.validate()?;
     let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
         .bind(&input.email)
         .fetch_optional(&state.db)
