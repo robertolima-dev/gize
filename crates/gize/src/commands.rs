@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
 use gize_core::{Manifest, ModelSpec, Module};
-use gize_generator::{Options, Plan, Writer, registry, scaffold, sync};
+use gize_generator::{Options, Plan, Writer, diff, registry, scaffold, sync};
 
 use crate::cli::GenFlags;
 
@@ -27,8 +27,8 @@ impl From<GenFlags> for Options {
 /// were generated within the same second (two migrations sharing one sqlx version — a
 /// duplicate-key error on `migrate`); nanoseconds make each invocation's stamp distinct.
 /// It also stays strictly greater than any earlier (including second-based, 0.5.0) stamp,
-/// so migration ordering is preserved. A calendar-formatted stamp lands with the
-/// migration-diffing work.
+/// so migration ordering is preserved. (A calendar-formatted stamp was considered for
+/// readability but rejected — it sorts before existing nanosecond stamps; see ADR-011.)
 fn migration_timestamp() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -216,12 +216,25 @@ pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> 
     Ok(())
 }
 
-/// `gize make migration [name]` — generate a blank, timestamped SQL migration to fill in by
-/// hand (ADR-011). Model-driven `CREATE TABLE` files come from `make model`/`make crud`; this
-/// is the escape hatch for everything else (indexes, constraints, backfills).
+/// `gize make migration [name]` (ADR-011).
+///
+/// - **With a name**: generate a blank, timestamped SQL migration to fill in by hand — the
+///   escape hatch for indexes, constraints and backfills.
+/// - **Without a name**: diff each module's declared fields (`gize.toml`) against the columns
+///   in its existing migrations and emit `ALTER TABLE` migrations to reconcile. New columns
+///   are added automatically (nullable, for safety); dropped columns are withheld unless
+///   `--force` is given.
 pub fn make_migration(name: Option<&str>, flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
-    let migration_name = slugify(name.unwrap_or("migration"));
+    match name {
+        Some(name) => make_blank_migration(name, flags),
+        None => make_diff_migrations(flags),
+    }
+}
+
+/// The named escape hatch: a single blank, timestamped migration to edit by hand.
+fn make_blank_migration(name: &str, flags: GenFlags) -> Result<()> {
+    let migration_name = slugify(name);
     if migration_name.is_empty() {
         bail!("migration name must contain at least one letter or digit");
     }
@@ -236,6 +249,76 @@ pub fn make_migration(name: Option<&str>, flags: GenFlags) -> Result<()> {
     );
     if !flags.dry_run {
         println!("\nEdit the SQL, then apply it with:\n  gize migrate");
+    }
+    Ok(())
+}
+
+/// Model-change diffing: reconcile each module's table to its `gize.toml` shape (ADR-011).
+fn make_diff_migrations(flags: GenFlags) -> Result<()> {
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    let dir = Path::new("migrations");
+
+    let mut plan = Plan::new();
+    let mut withheld_drops = 0usize;
+    for module in &manifest.modules {
+        if module.fields.is_empty() {
+            continue; // no declared shape to diff (e.g. a bare `make app` module)
+        }
+        let model = module.model_spec()?;
+        let Some(schema_diff) = diff::diff_model(dir, &module.name, &model)? else {
+            println!(
+                "  skip    {} (no create migration yet — run `gize make crud`/`gize sync` first)",
+                module.name
+            );
+            continue;
+        };
+        if schema_diff.is_empty() {
+            continue;
+        }
+
+        for f in &schema_diff.added {
+            println!("  add     {}.{} {}", module.name, f.name, f.ty.sql_type());
+        }
+        for c in &schema_diff.dropped {
+            if flags.force {
+                println!("  drop    {}.{c} (--force)", module.name);
+            } else {
+                println!("  hold    {}.{c} (drop withheld; use --force)", module.name);
+                withheld_drops += 1;
+            }
+        }
+
+        // Only emit a migration when there is something to apply: any added column, or a drop
+        // the developer opted into with --force.
+        if !schema_diff.added.is_empty() || (flags.force && !schema_diff.dropped.is_empty()) {
+            plan = plan.create(
+                format!(
+                    "migrations/{}_alter_{}.sql",
+                    migration_timestamp(),
+                    module.name
+                ),
+                diff::alter_sql(&module.name, &schema_diff, flags.force),
+            );
+        }
+    }
+
+    if plan.is_empty() {
+        println!("Schema matches gize.toml — no model-change migrations to generate.");
+        if withheld_drops > 0 {
+            println!(
+                "({withheld_drops} column drop(s) withheld — re-run with --force to emit them.)"
+            );
+        }
+        return Ok(());
+    }
+
+    let report = Writer::new(flags.into())
+        .apply(Path::new("."), &plan)
+        .context("writing alter migrations")?;
+    println!("\n{}", report.render(flags.dry_run));
+    if !flags.dry_run {
+        println!("Review the generated SQL, then apply it with:\n  gize migrate");
     }
     Ok(())
 }

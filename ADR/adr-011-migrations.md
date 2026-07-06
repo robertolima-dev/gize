@@ -74,12 +74,13 @@ and avoids diverging behaviour between a developer with and without a reachable 
   the safety model of `gize sync`, ADR-009). Rename is indistinguishable from drop+add at the
   column level, so it is always surfaced for human decision rather than inferred.
 
-**Timestamp format.** Migration filenames/`_sqlx_migrations` versions move from the interim
-nanosecond stamp (`{nanos:020}`, introduced in 0.5.1 to break same-second collisions) to a
-calendar stamp `YYYYMMDDHHMMSS` plus a short monotonic disambiguator when two are generated in
-the same second. Calendar stamps are human-readable, sort correctly, and stay strictly greater
-than every earlier nanosecond stamp (which are ~1.7e18, far below year-3000 calendar stamps),
-so ordering across the upgrade is preserved.
+**Timestamp format.** We keep the nanosecond stamp (`{nanos:020}`, from 0.5.1). A
+human-readable calendar stamp (`YYYYMMDDHHMMSS`) was considered and **rejected**: a calendar
+stamp for any realistic date (~2e13) is *smaller* than a current nanosecond-since-epoch stamp
+(~1.7e18), so switching would make Alpha-generated migrations sort *before* the nanosecond
+migrations already present in a 0.5.1 project. sqlx applies migrations in version order and
+refuses out-of-order additions, so the switch would break `gize migrate` on existing projects.
+Nanosecond stamps are unique, monotonic, and correctly ordered, so they stay.
 
 **Still not runtime auto-migration.** Diffing produces a reviewable `.sql` file; nothing is
 applied until `gize migrate`. The developer remains the owner of the DDL.

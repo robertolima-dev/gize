@@ -5,6 +5,7 @@
 //! 2. Write those files **safely** — never clobbering user code without `--force`, and
 //!    supporting `--dry-run` (ADR-012).
 
+pub mod diff;
 pub mod plan;
 pub mod registry;
 pub mod sync;

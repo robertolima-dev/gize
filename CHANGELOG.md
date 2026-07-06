@@ -13,6 +13,14 @@ ADR-013 (auth) and ADR-014 (relationships) added.
 
 ### Added
 
+- **`gize make migration` model diffing** (ADR-011). With no name, it now diffs each module's
+  declared fields (`gize.toml`) against the columns in that table's existing migrations and
+  emits `ALTER TABLE` migrations to reconcile. New columns are added automatically (as
+  **nullable**, with a `-- TODO` to backfill and tighten — adding a `NOT NULL` column to a
+  populated table would fail); dropped columns are **withheld** and only emitted with
+  `--force` (a rename is indistinguishable from drop+add, so it is always surfaced for
+  review). Column parsing reads only Gize's own generated SQL and never touches a database.
+  Passing a name still generates a blank migration to edit by hand.
 - **`gize sync`** — reconcile a project from `gize.toml` (ADR-009). It regenerates any
   declared module whose code is missing, creates a `CREATE TABLE` migration for any table
   that lacks one (idempotent — never spawns duplicates), and wires each module into
