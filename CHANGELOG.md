@@ -6,11 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
-## [Unreleased] — Beta
+## [0.7.0] - 2026-07-06 — Beta
 
-Work toward the Beta (see `docs/roadmap.md`): Admin, OpenAPI, a second database, and a plugin
-API. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010 (OpenAPI) and ADR-015
-(second database) added.
+The Beta phase (see `docs/roadmap.md`): a generated **Admin UI**, **OpenAPI** docs, a second
+database (**SQLite**) behind a dialect seam, and a **plugin API** — all verified end-to-end
+(the Admin CRUD is driven in a real headless browser; SQLite runs full CRUD with auth and
+relationships; an external plugin generates through the safe writer). The three Beta
+acceptance criteria are met. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010
+(OpenAPI) and ADR-015 (second database) added.
 
 ### Added
 

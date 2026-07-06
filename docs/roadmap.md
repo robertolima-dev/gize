@@ -10,6 +10,8 @@ Legend for dependencies: ADRs are in `/ADR`, backlog items in `/BACKLOG.md`.
 
 ## Phase 1 — MVP (months 0–4)
 
+**Status: Delivered (v0.5.x).**
+
 **Objective:** Prove initial productivity. From `gize new` to a running CRUD API in
 minutes, with readable generated code.
 
@@ -35,6 +37,9 @@ ADR-012 (CLI).
 
 ## Phase 2 — Alpha (months 4–8)
 
+**Status: Delivered (v0.6.x).** Rich `gize.toml`, `gize sync`, migration diffing,
+relationships, generated auth (Argon2 + JWT) and validation shipped.
+
 **Objective:** Make Gize usable on a real side-project. Round out the developer loop and
 introduce the manifest-driven workflow.
 
@@ -58,6 +63,9 @@ CLI + manifest, with auth-protected routes, and rebuilt from scratch reproducibl
 ---
 
 ## Phase 3 — Beta (months 8–12)
+
+**Status: Delivered (v0.7.0).** Admin, OpenAPI, SQLite (behind a dialect seam) and the plugin
+API v0 shipped; the three acceptance criteria below are met and verified.
 
 **Objective:** Feature-complete for the "productive CRUD backend" story. Introduce the
 Admin and API docs.
