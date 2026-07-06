@@ -34,3 +34,53 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+  e2e:
+    name: e2e · generate → migrate → serve → call routes (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the gize CLI
+        run: cargo build -p gize
+
+      - name: Generate a SQLite app, run it, and exercise its routes
+        run: |
+          set -euo pipefail
+          GIZE="$PWD/target/debug/gize"
+          WORK="$(mktemp -d)"; cd "$WORK"
+          "$GIZE" new blog --database sqlite
+          cd blog
+          "$GIZE" make crud Post title:String published:bool author:belongs_to:users
+          cat > .env <<EOF
+          DATABASE_URL=sqlite://blog.db?mode=rwc
+          PORT=8080
+          GIZE_JWT_SECRET=ci-secret
+          EOF
+          set -a; . ./.env; set +a
+          "$GIZE" migrate
+          cargo build
+          ./target/debug/blog & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 60); do curl -sf localhost:8080/users >/dev/null 2>&1 && break; sleep 1; done
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          # writes require auth
+          [ "$(code -X POST localhost:8080/posts -d '{}')" = "401" ]
+          # register returns a token; create with it succeeds
+          TOKEN=$(curl -s -X POST localhost:8080/users/register -H 'content-type: application/json' \
+            -d '{"name":"Ada","email":"ada@x.com","password":"longenough","is_admin":false}' \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+          AUTHOR=$(curl -s localhost:8080/users | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+          [ "$(code -X POST localhost:8080/posts -H "authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' \
+            -d "{\"title\":\"Hi\",\"published\":true,\"author_id\":\"$AUTHOR\"}")" = "201" ]
+          # duplicate email is a 409 (SQLite unique violation mapped through the dialect seam)
+          [ "$(code -X POST localhost:8080/users/register -H 'content-type: application/json' \
+            -d '{"name":"B","email":"ada@x.com","password":"longenough","is_admin":false}')" = "409" ]
+          echo "e2e OK: 401 unauth, 201 authed create, 409 duplicate — on a generated SQLite app"
