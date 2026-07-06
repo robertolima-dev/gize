@@ -7,6 +7,7 @@
 
 pub mod diff;
 pub mod plan;
+pub mod plugin;
 pub mod registry;
 pub mod sync;
 pub mod writer;
@@ -14,5 +15,6 @@ pub mod writer;
 pub mod scaffold;
 
 pub use plan::{FileOp, OpKind, Plan};
+pub use plugin::{GenContext, Generator};
 pub use registry::{Edit, register_module};
 pub use writer::{Options, Report, Writer};

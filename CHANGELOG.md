@@ -14,6 +14,14 @@ API. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010 (OpenAPI) and 
 
 ### Added
 
+- **Plugin API v0** (ADR-008, **unstable**). Third parties can extend `gize` by implementing
+  the `Generator` trait from `gize_generator::plugin` — given the project context, it returns a
+  `Plan`, which is applied through the same safe `Writer` as the built-ins (so plugins inherit
+  `--dry-run`, `--force` and never-clobber for free). `gize <name> …` dispatches to a
+  `gize-<name>` executable on `PATH`. Ships an example external plugin,
+  `examples/gize-healthcheck`, that builds against the public API and generates a `/health`
+  route module; verified end-to-end (`gize healthcheck` creates the file, re-runs skip it,
+  `--dry-run` writes nothing).
 - **Admin UI** (`gize make admin`, ADR-006). Generates a **separate** Vite + React +
   TypeScript SPA under `admin/`, data-driven from the manifest: one generic `Resource`
   component renders List/Create/Edit/Delete for every resource, with search, pagination, and

@@ -62,6 +62,10 @@ pub enum Command {
     Fmt,
     /// Check the project (wrapper around clippy/check).
     Check,
+    /// A plugin subcommand: `gize <name> …` runs the `gize-<name>` executable on PATH
+    /// (ADR-008, v0). The first element is the plugin name, the rest are its arguments.
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]

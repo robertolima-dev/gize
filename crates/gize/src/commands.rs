@@ -622,6 +622,24 @@ pub fn serve() -> Result<()> {
     Ok(())
 }
 
+/// `gize <name> …` — dispatch an unknown subcommand to a `gize-<name>` plugin on PATH
+/// (ADR-008, v0). The plugin is a normal executable; it receives the remaining arguments and
+/// generates through the same safe writer via `gize_generator::plugin`.
+pub fn run_external(args: Vec<String>) -> Result<()> {
+    let Some((name, rest)) = args.split_first() else {
+        bail!("no command given");
+    };
+    let bin = format!("gize-{name}");
+    match std::process::Command::new(&bin).args(rest).status() {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => bail!("`{bin}` exited with a non-zero status"),
+        Err(_) => bail!(
+            "unknown command `{name}`, and no `{bin}` plugin was found on PATH.\n\
+             Plugins are `gize-<name>` executables on your PATH (ADR-008, v0)."
+        ),
+    }
+}
+
 /// `gize doctor` — sanity-check the environment and project.
 pub fn doctor() -> Result<()> {
     println!("gize doctor\n");

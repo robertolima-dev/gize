@@ -498,6 +498,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gize-healthcheck"
+version = "0.6.2"
+dependencies = [
+ "anyhow",
+ "gize-generator",
+]
+
+[[package]]
 name = "gize-macros"
 version = "0.6.2"
 

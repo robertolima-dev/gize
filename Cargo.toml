@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "examples/gize-healthcheck"]
 
 [workspace.package]
 version = "0.6.2"

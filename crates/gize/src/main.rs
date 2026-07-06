@@ -49,5 +49,6 @@ fn main() -> Result<()> {
         Command::Doctor => commands::doctor(),
         Command::Fmt => commands::fmt(),
         Command::Check => commands::check(),
+        Command::External(args) => commands::run_external(args),
     }
 }
