@@ -75,6 +75,33 @@ pub fn openapi_slice(manifest: &Manifest) -> Result<Plan> {
         .create("openapi.json", openapi_json(manifest)?))
 }
 
+/// The generated `admin/src/resources.ts` — the manifest-derived resource descriptors
+/// (ADR-006). A derived artifact, always regenerated from the current manifest.
+pub fn admin_resources_ts(manifest: &Manifest) -> Result<String> {
+    gize_admin::resources_ts(manifest)
+}
+
+/// The admin SPA **shell** (ADR-006): every file of the separate Vite + React + TypeScript app
+/// under `admin/` except the derived `src/resources.ts`. Static, so it is reconciled
+/// drift-aware by `gize sync`; the descriptors are written separately (see
+/// [`admin_resources_ts`]). Talks to the API through a Vite dev proxy — no backend changes.
+pub fn admin_shell_plan(manifest: &Manifest) -> Plan {
+    let project = &manifest.project.name;
+    Plan::new()
+        .create("admin/package.json", gize_admin::package_json(project))
+        .create("admin/vite.config.ts", gize_admin::vite_config())
+        .create("admin/tsconfig.json", gize_admin::tsconfig())
+        .create("admin/index.html", gize_admin::index_html())
+        .create("admin/.env.example", gize_admin::env_example())
+        .create("admin/.gitignore", gize_admin::gitignore())
+        .create("admin/src/main.tsx", gize_admin::main_tsx())
+        .create("admin/src/styles.css", gize_admin::styles_css())
+        .create("admin/src/api.ts", gize_admin::api_ts())
+        .create("admin/src/auth.tsx", gize_admin::auth_tsx())
+        .create("admin/src/App.tsx", gize_admin::app_tsx())
+        .create("admin/src/Resource.tsx", gize_admin::resource_tsx())
+}
+
 /// The code files (no migration) for a module reconstructed from its manifest entry, for
 /// `gize sync` (ADR-009 revision). The built-in `users` module keeps its special `model.rs`.
 pub fn module_code(module: &Module) -> Result<Plan> {

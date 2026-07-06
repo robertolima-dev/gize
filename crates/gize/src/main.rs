@@ -40,10 +40,7 @@ fn main() -> Result<()> {
             MakeCommand::Migration { name, flags } => {
                 commands::make_migration(name.as_deref(), flags)
             }
-            MakeCommand::Admin { name, .. } => commands::not_yet(
-                &format!("make admin {name}"),
-                "generate an admin UI (List/Create/Edit/Show/Delete) for the model",
-            ),
+            MakeCommand::Admin { name, flags } => commands::make_admin(name.as_deref(), flags),
         },
 
         Command::Migrate { status } => commands::migrate(status),

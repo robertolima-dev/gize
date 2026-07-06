@@ -222,6 +222,53 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     Ok(())
 }
 
+/// `gize make admin` — generate the admin SPA (ADR-006) for every resource in the manifest.
+///
+/// The admin is a **separate** Vite + React + TypeScript app under `admin/`, data-driven from
+/// `gize.toml`. The static shell is written drift-aware; `admin/src/resources.ts` is a derived
+/// artifact refreshed from the current manifest. The app reaches the API through a Vite dev
+/// proxy, so the backend needs no CORS or other changes.
+pub fn make_admin(_name: Option<&str>, flags: GenFlags) -> Result<()> {
+    ensure_in_project()?;
+    let mut manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    if manifest.modules.is_empty() {
+        bail!("no resources in gize.toml — add one with `gize make crud` first");
+    }
+
+    let report = Writer::new(flags.into())
+        .apply(Path::new("."), &scaffold::admin_shell_plan(&manifest))
+        .context("generating the admin app")?;
+    println!("Admin SPA (admin/):\n{}", report.render(flags.dry_run));
+
+    // Refresh the derived descriptors from the current manifest (always overwritten).
+    if flags.dry_run {
+        println!("  update  admin/src/resources.ts (would refresh descriptors)");
+    } else {
+        fs::create_dir_all("admin/src").context("creating admin/src")?;
+        fs::write(
+            "admin/src/resources.ts",
+            scaffold::admin_resources_ts(&manifest)?,
+        )
+        .context("writing admin/src/resources.ts")?;
+        println!("  update  admin/src/resources.ts (from gize.toml)");
+    }
+
+    // Record the feature so `gize sync` reconciles the admin.
+    if !manifest.features.admin && !flags.dry_run {
+        manifest.features.admin = true;
+        fs::write("gize.toml", manifest.to_toml()?).context("writing gize.toml")?;
+    }
+
+    if !flags.dry_run {
+        println!(
+            "\nNext:\n  cd admin\n  npm install\n  npm run dev   \
+             # http://localhost:5173 (proxies /api to your `gize serve` backend)"
+        );
+    }
+    Ok(())
+}
+
 /// `gize make model <Name> field:Type ...` — generate a model + migration in the current
 /// project.
 pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
@@ -395,6 +442,12 @@ pub fn sync(flags: GenFlags) -> Result<()> {
         plan = plan.create("src/app/openapi.rs", scaffold::openapi_module_rs());
     }
 
+    // 2c. Admin (ADR-006): reconcile the static SPA shell drift-aware; the resource
+    //     descriptors are a derived artifact, refreshed after apply below.
+    if manifest.features.admin {
+        plan = plan.extend(scaffold::admin_shell_plan(&manifest));
+    }
+
     // 3. Diff against the filesystem and apply per the safety flags.
     let root = Path::new(".");
     let recon = sync::reconcile(root, &plan)?;
@@ -419,6 +472,21 @@ pub fn sync(flags: GenFlags) -> Result<()> {
             fs::write("openapi.json", scaffold::openapi_json(&manifest)?)
                 .context("writing openapi.json")?;
             println!("  update  openapi.json (refreshed from gize.toml)");
+        }
+    }
+
+    // Refresh the derived admin descriptors from the current manifest (always overwritten).
+    if manifest.features.admin {
+        if flags.dry_run {
+            println!("  update  admin/src/resources.ts (would refresh descriptors)");
+        } else {
+            fs::create_dir_all("admin/src").context("creating admin/src")?;
+            fs::write(
+                "admin/src/resources.ts",
+                scaffold::admin_resources_ts(&manifest)?,
+            )
+            .context("writing admin/src/resources.ts")?;
+            println!("  update  admin/src/resources.ts (refreshed from gize.toml)");
         }
     }
 
@@ -592,15 +660,6 @@ fn ensure_in_project() -> Result<()> {
     if !Path::new("gize.toml").exists() {
         bail!("not a gize project (no gize.toml here). Run `gize new <name>` first.");
     }
-    Ok(())
-}
-
-/// Handlers not yet implemented in the MVP skeleton. They report the planned behaviour so
-/// the command surface is complete and discoverable (see BACKLOG.md / roadmap).
-pub fn not_yet(command: &str, planned: &str) -> Result<()> {
-    println!("`gize {command}` is planned but not implemented in the MVP skeleton yet.");
-    println!("Planned behaviour: {planned}");
-    println!("Tracked in BACKLOG.md.");
     Ok(())
 }
 

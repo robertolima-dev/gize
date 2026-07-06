@@ -9,3 +9,5 @@ description = "Admin UI generator for Gize (Beta phase; see ADR-006)."
 publish = false
 
 [dependencies]
+gize-core.workspace = true
+anyhow.workspace = true

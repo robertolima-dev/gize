@@ -457,6 +457,10 @@ dependencies = [
 [[package]]
 name = "gize-admin"
 version = "0.6.2"
+dependencies = [
+ "anyhow",
+ "gize-core",
+]
 
 [[package]]
 name = "gize-auth"
@@ -486,6 +490,7 @@ name = "gize-generator"
 version = "0.6.2"
 dependencies = [
  "anyhow",
+ "gize-admin",
  "gize-core",
  "gize-openapi",
  "gize-templates",

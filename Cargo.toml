@@ -16,6 +16,7 @@ gize-templates = { path = "crates/gize-templates", version = "0.6.2" }
 gize-db = { path = "crates/gize-db", version = "0.6.2" }
 gize-macros = { path = "crates/gize-macros", version = "0.6.2" }
 gize-openapi = { path = "crates/gize-openapi", version = "0.6.2" }
+gize-admin = { path = "crates/gize-admin", version = "0.6.2" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

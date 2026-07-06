@@ -14,6 +14,16 @@ API. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010 (OpenAPI) and 
 
 ### Added
 
+- **Admin UI** (`gize make admin`, ADR-006). Generates a **separate** Vite + React +
+  TypeScript SPA under `admin/`, data-driven from the manifest: one generic `Resource`
+  component renders List/Create/Edit/Delete for every resource, with search, pagination, and
+  forms validated by Zod schemas that mirror the backend `validator` rules. Auth uses the
+  existing JWT login; the app reaches the API through a Vite dev proxy (`/api`), so the
+  backend needs no CORS or other changes — the admin is a fully separable artifact.
+  `admin/src/resources.ts` (the descriptors) is derived and refreshed by `gize make admin`
+  and `gize sync`. Verified end-to-end in a headless browser (Playwright + Chrome): login,
+  list, create (incl. a `belongs_to` FK) and delete all work against the running backend;
+  the generated app builds under strict `tsc` and `vite build`.
 - **OpenAPI generation** (ADR-010). `gize new --openapi` (or `features.openapi` in `gize.toml`)
   generates an OpenAPI 3.0.3 spec **from the manifest + DTOs** — the same source of truth the
   CRUD generator uses — so the spec matches the routes by construction (no drift). The app
