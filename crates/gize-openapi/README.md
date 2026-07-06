@@ -5,18 +5,38 @@
 [![Crates.io](https://img.shields.io/crates/v/gize-openapi.svg)](https://crates.io/crates/gize-openapi)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/robertolima-dev/gize#license)
 
-`gize-openapi` will generate OpenAPI specifications from Gize-generated resources, so your
-API documentation stays in sync with your code.
+`gize-openapi` generates an OpenAPI 3.0.3 spec from the **manifest** (`gize.toml`) plus the
+DTOs, the same source of truth the CRUD and admin generators use, so the spec matches the
+generated routes by construction rather than by hand-kept annotations. See
+[ADR-010](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-010-openapi.md).
 
-> **Status:** placeholder (planned for the **Beta** phase — see
-> [ADR-010](https://github.com/robertolima-dev/gize/blob/main/ADR)). The crate exists today
-> so the name is reserved and it participates in the workspace. The public API is not yet
-> stable.
+The spec covers each resource's CRUD plus the `users` register/login endpoints, marks write
+routes as bearer-secured, hides `password` from responses, and includes relationship foreign
+keys. Enable it with `gize new --openapi` (or `features.openapi` in `gize.toml`); the app then
+serves it at `GET /openapi.json` with a reference UI at `/docs`, and `gize sync` keeps it in
+step with the manifest.
+
+## Usage
+
+```toml
+[dependencies]
+gize-openapi = "0.7"
+```
+
+```rust
+let manifest = gize_core::Manifest::from_toml(toml_text)?;
+let spec = gize_openapi::spec_json(&manifest)?; // serde_json::Value
+# Ok::<(), anyhow::Error>(())
+```
 
 ## Part of the Gize workspace
 
-See the [main project](https://github.com/robertolima-dev/gize) for the full crate list and
-roadmap.
+| Crate | Role |
+| --- | --- |
+| `gize-core` | Domain model, manifest, dialect, conventions |
+| `gize-generator` | Codegen engine: safe writer, sync, plugins |
+| **`gize-openapi`** | OpenAPI spec generation (this crate) |
+| `gize` | The `gize` CLI |
 
 ## License
 

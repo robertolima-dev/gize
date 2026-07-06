@@ -1,40 +1,40 @@
 # gize-db
 
-**Data-layer conventions and migrations for the [Gize](https://github.com/robertolima-dev/gize) framework.**
+**Migrations and data-layer conventions for the [Gize](https://github.com/robertolima-dev/gize) framework.**
 
 [![Crates.io](https://img.shields.io/crates/v/gize-db.svg)](https://crates.io/crates/gize-db)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/robertolima-dev/gize#license)
 
-`gize-db` centralizes Gize's data-layer conventions on top of
-[SQLx](https://crates.io/crates/sqlx) and PostgreSQL
-(see [ADR-003](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-003-data-layer.md)
-and [ADR-011](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-011-migrations.md)).
+`gize-db` owns Gize's migration runner on top of
+[SQLx](https://crates.io/crates/sqlx). See
+[ADR-003](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-003-data-layer.md),
+[ADR-011](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-011-migrations.md) and
+[ADR-015](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-015-second-database.md).
 
-Its MVP scope is intentionally thin:
+- **`migrate`**: a synchronous wrapper around SQLx's runtime `Migrator`. It loads
+  `migrations/*.sql`, tracks applied versions in `_sqlx_migrations`, and applies pending ones
+  in order. It runs against both **PostgreSQL** and **SQLite** through SQLx's `Any` driver, so
+  one code path serves either database. There is **no** risky runtime auto-migration: SQL is
+  generated and reviewed, then applied on demand.
 
-- **`pg_column_type`** — the single source of truth mapping Gize field types to PostgreSQL
-  column types, reused by the migration templates and (future) migration diffing.
-- **`migrate`** — a synchronous wrapper around SQLx's runtime `Migrator`. It loads
-  `migrations/*.sql`, tracks applied versions in `_sqlx_migrations`, and applies pending
-  ones in order. There is **no** risky runtime auto-migration.
-
-The SQLx pool wiring lives in the generated app code, not here.
+The database-specific SQL (column types, primary keys, placeholders) is generated from
+`gize_core::Dialect`; the SQLx pool wiring lives in the generated app code, not here.
 
 ## Usage
 
 ```toml
 [dependencies]
-gize-db = "0.2"
+gize-db = "0.7"
 ```
 
 ## Part of the Gize workspace
 
 | Crate | Role |
 | --- | --- |
-| `gize-core` | Domain model & conventions |
-| `gize-generator` | Codegen engine |
-| `gize-templates` | Templates for generated code |
-| **`gize-db`** | Data-layer conventions + migrations (this crate) |
+| `gize-core` | Domain model, manifest, dialect, conventions |
+| `gize-generator` | Codegen engine: safe writer, sync, plugins |
+| `gize-templates` | Templates for the generated code |
+| **`gize-db`** | Migrations, PostgreSQL and SQLite (this crate) |
 | `gize` | The `gize` CLI |
 
 ## License
