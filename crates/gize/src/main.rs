@@ -22,8 +22,9 @@ fn main() -> Result<()> {
             name,
             no_user,
             openapi,
+            database,
             flags,
-        } => commands::new_project(&name, no_user, openapi, flags),
+        } => commands::new_project(&name, no_user, openapi, &database, flags),
 
         Command::Make(make) => match make {
             MakeCommand::Model {

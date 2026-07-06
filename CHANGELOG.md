@@ -14,6 +14,25 @@ API. ADR-before-code: ADR-006 (admin), ADR-008 (plugins), ADR-010 (OpenAPI) and 
 
 ### Added
 
+- **SQLite support behind a dialect seam** (ADR-015). `gize new --database sqlite` generates a
+  SQLite-targeting project; Postgres stays the default and its output is byte-identical to
+  before. A `Dialect` in `gize-core` centralizes everything that differs — column types (TEXT/
+  INTEGER/REAL), primary-key generation (app-side UUID on SQLite, `gen_random_uuid()` on
+  Postgres), bind placeholders (`?n` vs `$n`), timestamp defaults, the pool type
+  (`SqlitePool`/`PgPool`) and integrity-error codes (SQLite `2067`/`787` and Postgres
+  `23505`/`23503`, both mapped to 409). `gize migrate` runs against either database via sqlx's
+  `Any` driver. Verified end-to-end on SQLite: generate → migrate → serve → full CRUD with
+  auth, relationships and validation, including `uuid`/`DateTime<Utc>` round-tripping and
+  409s on duplicate/foreign-key violations.
+
+### Fixed
+
+- Generated projects now depend on `argon2` with the `std` feature, so `password_hash`'s
+  `OsRng` resolves regardless of the transitive `rand_core` version — a fresh `gize new`
+  project failed to compile without it once newer patch releases were pulled.
+
+### Added
+
 - **Plugin API v0** (ADR-008, **unstable**). Third parties can extend `gize` by implementing
   the `Generator` trait from `gize_generator::plugin` — given the project context, it returns a
   `Plan`, which is applied through the same safe `Writer` as the built-ins (so plugins inherit

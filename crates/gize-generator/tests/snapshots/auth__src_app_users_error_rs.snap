@@ -22,11 +22,11 @@ impl From<sqlx::Error> for Error {
         if let sqlx::Error::RowNotFound = error {
             return Error::NotFound;
         }
-        // Map Postgres integrity violations to client errors instead of a generic 500.
+        // Map database integrity violations to client errors instead of a generic 500.
         if let sqlx::Error::Database(ref db) = error {
             match db.code().as_deref() {
-                Some("23505") => return Error::Conflict,   // unique_violation
-                Some("23503") => return Error::ForeignKey, // foreign_key_violation
+                Some("23505") => return Error::Conflict,   // unique violation
+                Some("23503") => return Error::ForeignKey, // foreign-key violation
                 _ => {}
             }
         }

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
-use gize_core::{Manifest, ModelSpec, Module};
+use gize_core::{Dialect, Manifest, ModelSpec, Module};
 use gize_generator::{Options, Plan, Writer, diff, registry, scaffold, sync};
 
 use crate::cli::GenFlags;
@@ -40,13 +40,20 @@ fn migration_timestamp() -> String {
 /// `gize new <name>` — scaffold a project into a new directory named `name`. Unless
 /// `no_user` is set, a built-in `users` resource (model, CRUD, migration with an `is_admin`
 /// flag) is generated and wired in.
-pub fn new_project(name: &str, no_user: bool, openapi: bool, flags: GenFlags) -> Result<()> {
+pub fn new_project(
+    name: &str,
+    no_user: bool,
+    openapi: bool,
+    database: &str,
+    flags: GenFlags,
+) -> Result<()> {
     let root = Path::new(name);
     if root.exists() && !flags.force {
         bail!("directory `{name}` already exists (use --force to generate into it)");
     }
 
-    let plan = scaffold::new_project(name, !no_user, openapi, &migration_timestamp());
+    let dialect = Dialect::from_database(database);
+    let plan = scaffold::new_project(name, !no_user, openapi, dialect, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(root, &plan)
         .with_context(|| format!("scaffolding project `{name}`"))?;
@@ -195,7 +202,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     }
     let module = table_name(&model.name);
 
-    let plan = scaffold::make_crud(&model, &migration_timestamp());
+    let plan = scaffold::make_crud(&model, project_dialect()?, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating CRUD")?;
@@ -274,7 +281,7 @@ pub fn make_admin(_name: Option<&str>, flags: GenFlags) -> Result<()> {
 pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
     let model = ModelSpec::parse(name, fields).context("invalid model definition")?;
-    let plan = scaffold::make_model(&model, &migration_timestamp());
+    let plan = scaffold::make_model(&model, project_dialect()?, &migration_timestamp());
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating model")?;
@@ -409,12 +416,14 @@ pub fn sync(flags: GenFlags) -> Result<()> {
         return Ok(());
     }
 
+    let dialect = Dialect::from_database(&manifest.stack.database);
+
     // 1. Desired code files for every declared module (deterministic; no timestamps). The
     //    auth module is part of the skeleton the CRUD routes depend on, so reconcile it too.
     let mut plan = Plan::new().create("src/auth/mod.rs", scaffold::auth_mod_rs());
     for module in &manifest.modules {
         plan = plan.extend(
-            scaffold::module_code(module)
+            scaffold::module_code(module, dialect)
                 .with_context(|| format!("planning module `{}`", module.name))?,
         );
     }
@@ -424,7 +433,7 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     //    foreign key's target table is created before the table that references it (ADR-014).
     for module in manifest.modules_in_dependency_order()? {
         if !create_migration_exists(&module.name)? {
-            let sql = scaffold::module_migration_sql(module)?;
+            let sql = scaffold::module_migration_sql(module, dialect)?;
             plan = plan.create(
                 format!(
                     "migrations/{}_create_{}.sql",
@@ -679,6 +688,13 @@ fn ensure_in_project() -> Result<()> {
         bail!("not a gize project (no gize.toml here). Run `gize new <name>` first.");
     }
     Ok(())
+}
+
+/// The database dialect for the current project, read from `gize.toml` (ADR-015).
+fn project_dialect() -> Result<Dialect> {
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    Ok(Dialect::from_database(&manifest.stack.database))
 }
 
 #[cfg(test)]

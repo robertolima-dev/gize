@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use gize_core::naming::table_name;
-use gize_core::{Manifest, ModelSpec, Module};
+use gize_core::{Dialect, Manifest, ModelSpec, Module};
 use gize_templates::{auth, crud, model, module, openapi, project, user};
 
 use crate::plan::Plan;
@@ -12,7 +12,7 @@ use crate::registry;
 /// The nine code files of a CRUD vertical slice (everything but the migration), shared by
 /// `gize new`'s built-in users slice, `gize make crud`, and `gize sync` so all three paths
 /// emit byte-identical code. When `is_user` is set, the password-hiding `model.rs` is used.
-fn crud_files(model: &ModelSpec, dir: &str, is_user: bool) -> Plan {
+fn crud_files(model: &ModelSpec, dir: &str, is_user: bool, dialect: Dialect) -> Plan {
     // The users slice customizes the files that auth touches (password-hiding model, hashing
     // handlers, register/login routes, an error type with `Unauthorized`); everything else is
     // the generic CRUD template. See `gize_templates::user`.
@@ -20,15 +20,15 @@ fn crud_files(model: &ModelSpec, dir: &str, is_user: bool) -> Plan {
         (
             user::model_rs(),
             user::dto_rs(),
-            user::error_rs(),
-            user::handler_rs(),
+            user::error_rs(dialect),
+            user::handler_rs(dialect),
             user::routes_rs(),
         )
     } else {
         (
             model::model_rs(model),
             crud::dto_rs(model),
-            crud::error_rs(model),
+            crud::error_rs(model, dialect),
             crud::handler_rs(model),
             crud::routes_rs(model),
         )
@@ -38,8 +38,14 @@ fn crud_files(model: &ModelSpec, dir: &str, is_user: bool) -> Plan {
         .create(format!("{dir}/model.rs"), model_rs)
         .create(format!("{dir}/dto.rs"), dto_rs)
         .create(format!("{dir}/error.rs"), error_rs)
-        .create(format!("{dir}/repository.rs"), crud::repository_rs(model))
-        .create(format!("{dir}/service.rs"), crud::service_rs(model))
+        .create(
+            format!("{dir}/repository.rs"),
+            crud::repository_rs(model, dialect),
+        )
+        .create(
+            format!("{dir}/service.rs"),
+            crud::service_rs(model, dialect),
+        )
         .create(format!("{dir}/handler.rs"), handler_rs)
         .create(format!("{dir}/routes.rs"), routes_rs)
         .create(format!("{dir}/tests.rs"), crud::tests_rs(model))
@@ -104,20 +110,20 @@ pub fn admin_shell_plan(manifest: &Manifest) -> Plan {
 
 /// The code files (no migration) for a module reconstructed from its manifest entry, for
 /// `gize sync` (ADR-009 revision). The built-in `users` module keeps its special `model.rs`.
-pub fn module_code(module: &Module) -> Result<Plan> {
+pub fn module_code(module: &Module, dialect: Dialect) -> Result<Plan> {
     let model = module.model_spec()?;
     let dir = format!("src/app/{}", module.name);
-    Ok(crud_files(&model, &dir, module.name == "users"))
+    Ok(crud_files(&model, &dir, module.name == "users", dialect))
 }
 
 /// The `CREATE TABLE` migration SQL for a module reconstructed from its manifest entry. The
 /// built-in `users` table keeps its special migration (`email UNIQUE`, `is_admin` default).
-pub fn module_migration_sql(module: &Module) -> Result<String> {
+pub fn module_migration_sql(module: &Module, dialect: Dialect) -> Result<String> {
     let model = module.model_spec()?;
     Ok(if module.name == "users" {
-        user::migration_sql()
+        user::migration_sql(dialect)
     } else {
-        model::migration_sql(&model)
+        model::migration_sql(&model, dialect)
     })
 }
 
@@ -128,12 +134,23 @@ pub fn module_migration_sql(module: &Module) -> Result<String> {
 /// authentication-ready data from the start. When `with_openapi` is set, an OpenAPI spec +
 /// `/docs` UI are generated and wired (ADR-010). `timestamp` names the users migration and is
 /// injected (not read from the clock) to keep generation pure and tests deterministic.
-pub fn new_project(name: &str, with_user: bool, with_openapi: bool, timestamp: &str) -> Plan {
+pub fn new_project(
+    name: &str,
+    with_user: bool,
+    with_openapi: bool,
+    dialect: Dialect,
+    timestamp: &str,
+) -> Plan {
     let mut manifest = Manifest::new(name);
     // Auth is generated for every project (ADR-013): the `src/auth` module is emitted below
     // and write routes are guarded, so the manifest reflects it.
     manifest.features.authentication = true;
     manifest.features.openapi = with_openapi;
+    // Record the chosen database so `gize sync` regenerates against the same dialect (ADR-015).
+    manifest.stack.database = match dialect {
+        Dialect::Postgres => "postgres".to_string(),
+        Dialect::Sqlite => "sqlite".to_string(),
+    };
     if with_user {
         // Record the built-in users module with its full shape so `gize sync` can
         // reconcile/rebuild it from the manifest alone (ADR-009 revision).
@@ -156,12 +173,12 @@ pub fn new_project(name: &str, with_user: bool, with_openapi: bool, timestamp: &
     }
 
     let mut plan = Plan::new()
-        .create("Cargo.toml", project::cargo_toml(name))
+        .create("Cargo.toml", project::cargo_toml(name, dialect))
         .create("gize.toml", project::gize_toml(&manifest))
-        .create(".env.example", project::env_example(name))
+        .create(".env.example", project::env_example(name, dialect))
         .create(".gitignore", "/target\n.env\n")
         .create("src/main.rs", project::main_rs())
-        .create("src/state.rs", project::state_rs())
+        .create("src/state.rs", project::state_rs(dialect))
         .create("src/router.rs", project::router_rs())
         .create("src/config/mod.rs", project::config_mod_rs())
         .create("src/auth/mod.rs", auth::mod_rs())
@@ -173,7 +190,7 @@ pub fn new_project(name: &str, with_user: bool, with_openapi: bool, timestamp: &
         .mkdir("migrations");
 
     if with_user {
-        plan = plan.extend(user_slice(timestamp));
+        plan = plan.extend(user_slice(dialect, timestamp));
     }
     if with_openapi {
         // A fresh manifest is valid, so the spec renders; propagate any error defensively.
@@ -185,10 +202,10 @@ pub fn new_project(name: &str, with_user: bool, with_openapi: bool, timestamp: &
 
 /// The built-in `users` vertical slice for a fresh project: the generic CRUD templates plus
 /// a password-hiding model and a users migration with an `is_admin` flag (see [`user`]).
-fn user_slice(timestamp: &str) -> Plan {
-    crud_files(&user::spec(), "src/app/users", true).create(
+fn user_slice(dialect: Dialect, timestamp: &str) -> Plan {
+    crud_files(&user::spec(), "src/app/users", true, dialect).create(
         format!("migrations/{timestamp}_create_users.sql"),
-        user::migration_sql(),
+        user::migration_sql(dialect),
     )
 }
 
@@ -222,7 +239,7 @@ pub fn make_app(module: &str) -> Plan {
 /// The module directory is the pluralized snake_case of the model (matching the table and
 /// the `gize make app` convention, e.g. `User` -> `users`). `timestamp` is injected (not
 /// read from the clock) so generation stays pure and tests are deterministic.
-pub fn make_model(model: &ModelSpec, timestamp: &str) -> Plan {
+pub fn make_model(model: &ModelSpec, dialect: Dialect, timestamp: &str) -> Plan {
     let module = table_name(&model.name);
     let table = &module;
 
@@ -230,20 +247,20 @@ pub fn make_model(model: &ModelSpec, timestamp: &str) -> Plan {
         .create(format!("src/app/{module}/model.rs"), model::model_rs(model))
         .create(
             format!("migrations/{timestamp}_create_{table}.sql"),
-            model::migration_sql(model),
+            model::migration_sql(model, dialect),
         )
 }
 
 /// Plan for `gize make crud <Name> field:Type ...`: a full, compiling resource — model,
 /// DTOs, SQLx repository, service, Axum handlers, routes, error, tests, and the migration.
 /// Registration in `app/mod.rs` / `gize.toml` is handled by the command.
-pub fn make_crud(model: &ModelSpec, timestamp: &str) -> Plan {
+pub fn make_crud(model: &ModelSpec, dialect: Dialect, timestamp: &str) -> Plan {
     let table = table_name(&model.name);
     let dir = format!("src/app/{table}");
 
-    crud_files(model, &dir, false).create(
+    crud_files(model, &dir, false, dialect).create(
         format!("migrations/{timestamp}_create_{table}.sql"),
-        model::migration_sql(model),
+        model::migration_sql(model, dialect),
     )
 }
 
@@ -278,7 +295,7 @@ mod tests {
 
     #[test]
     fn new_project_plan_includes_core_files() {
-        let plan = new_project("shop", false, false, "20260704120000");
+        let plan = new_project("shop", false, false, Dialect::Postgres, "20260704120000");
         let paths = paths_of(&plan);
         assert!(paths.contains(&"Cargo.toml".to_string()));
         assert!(paths.contains(&"gize.toml".to_string()));
@@ -288,7 +305,7 @@ mod tests {
 
     #[test]
     fn new_project_without_user_omits_users_slice() {
-        let plan = new_project("shop", false, false, "20260704120000");
+        let plan = new_project("shop", false, false, Dialect::Postgres, "20260704120000");
         let paths = paths_of(&plan);
         assert!(!paths.iter().any(|p| p.starts_with("src/app/users/")));
         assert!(!paths.iter().any(|p| p.ends_with("_create_users.sql")));
@@ -299,7 +316,7 @@ mod tests {
 
     #[test]
     fn new_project_scaffolds_and_wires_users_by_default() {
-        let plan = new_project("shop", true, false, "20260704120000");
+        let plan = new_project("shop", true, false, Dialect::Postgres, "20260704120000");
         let paths = paths_of(&plan);
         for file in ["mod.rs", "model.rs", "dto.rs", "repository.rs", "routes.rs"] {
             assert!(
@@ -323,7 +340,7 @@ mod tests {
     #[test]
     fn make_model_plan_has_model_and_migration() {
         let model = ModelSpec::parse("User", &["name:String".to_string()]).unwrap();
-        let plan = make_model(&model, "20260704120000");
+        let plan = make_model(&model, Dialect::Postgres, "20260704120000");
         let paths: Vec<_> = plan
             .ops
             .iter()
@@ -336,7 +353,7 @@ mod tests {
     #[test]
     fn make_crud_plan_has_slice_and_migration() {
         let model = ModelSpec::parse("Product", &["name:String".to_string()]).unwrap();
-        let plan = make_crud(&model, "20260704120000");
+        let plan = make_crud(&model, Dialect::Postgres, "20260704120000");
         let paths: Vec<_> = plan
             .ops
             .iter()
@@ -364,7 +381,7 @@ mod tests {
 
     #[test]
     fn new_project_with_openapi_includes_spec_and_module() {
-        let plan = new_project("blog", true, true, "20260704120000");
+        let plan = new_project("blog", true, true, Dialect::Postgres, "20260704120000");
         let paths: Vec<_> = plan
             .ops
             .iter()
@@ -392,7 +409,7 @@ mod tests {
 
     #[test]
     fn new_project_without_openapi_omits_it() {
-        let plan = new_project("blog", true, false, "20260704120000");
+        let plan = new_project("blog", true, false, Dialect::Postgres, "20260704120000");
         let paths: Vec<_> = plan
             .ops
             .iter()

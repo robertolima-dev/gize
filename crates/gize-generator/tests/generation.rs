@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gize_core::ModelSpec;
+use gize_core::{Dialect, ModelSpec};
 use gize_generator::{Options, Plan, Report, Writer, scaffold};
 
 /// Fixed, injected timestamp so migration filenames and contents are deterministic.
@@ -59,7 +59,7 @@ fn new_project_materializes_expected_tree_on_disk() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
         Options::default(),
     );
 
@@ -94,7 +94,7 @@ fn new_project_materializes_expected_tree_on_disk() {
 #[test]
 fn regenerating_is_idempotent_and_preserves_hand_edits() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", true, false, TS);
+    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, TS);
     apply(&root, &plan, Options::default());
 
     // Simulate a developer editing a generated file.
@@ -125,7 +125,7 @@ fn regenerating_is_idempotent_and_preserves_hand_edits() {
 #[test]
 fn force_overwrites_and_dry_run_writes_nothing() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", false, false, TS);
+    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, TS);
     apply(&root, &plan, Options::default());
 
     let sentinel = root.join("Cargo.toml");
@@ -168,12 +168,12 @@ fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", false, false, TS),
+        &scaffold::new_project("shop", false, false, Dialect::Postgres, TS),
         Options::default(),
     );
     apply(
         &root,
-        &scaffold::make_crud(&product_model(), TS),
+        &scaffold::make_crud(&product_model(), Dialect::Postgres, TS),
         Options::default(),
     );
 
@@ -231,7 +231,7 @@ fn content<'a>(plan: &'a Plan, rel: &str) -> &'a str {
 #[test]
 fn project_skeleton_matches_snapshots() {
     // No built-in users here, so the skeleton templates are isolated from the CRUD ones.
-    let plan = scaffold::new_project("shop", false, false, TS);
+    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, TS);
     for rel in [
         "Cargo.toml",
         "gize.toml",
@@ -247,7 +247,7 @@ fn project_skeleton_matches_snapshots() {
 
 #[test]
 fn crud_slice_matches_snapshots() {
-    let plan = scaffold::make_crud(&product_model(), TS);
+    let plan = scaffold::make_crud(&product_model(), Dialect::Postgres, TS);
     for rel in [
         "src/app/products/mod.rs",
         "src/app/products/model.rs",
@@ -279,7 +279,8 @@ fn desired_code_plan(root: &Path) -> Plan {
     let manifest = gize_core::Manifest::from_toml(&text).expect("parse manifest");
     let mut plan = Plan::new();
     for module in &manifest.modules {
-        plan = plan.extend(scaffold::module_code(module).expect("plan module code"));
+        plan = plan
+            .extend(scaffold::module_code(module, Dialect::Postgres).expect("plan module code"));
     }
     plan
 }
@@ -290,12 +291,12 @@ fn sync_rebuilds_a_deleted_module_from_the_manifest() {
     // A project with the built-in users plus a Product CRUD, both recorded in gize.toml.
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
         Options::default(),
     );
     apply(
         &root,
-        &scaffold::make_crud(&product_model(), TS),
+        &scaffold::make_crud(&product_model(), Dialect::Postgres, TS),
         Options::default(),
     );
     // make_crud records the module shape the way the CLI does.
@@ -328,7 +329,7 @@ fn sync_reports_drift_and_preserves_hand_edits_without_force() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
         Options::default(),
     );
 
@@ -379,7 +380,7 @@ fn record_products_in_manifest(root: &Path) {
 fn auth_and_users_slice_match_snapshots() {
     // The security-sensitive generated code (auth module + the users slice that hashes
     // passwords and issues tokens) is pinned so template edits are always reviewed.
-    let plan = scaffold::new_project("shop", true, false, TS);
+    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, TS);
     for rel in [
         "src/auth/mod.rs",
         "src/app/users/handler.rs",

@@ -37,6 +37,9 @@ pub enum Command {
         /// Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`).
         #[arg(long)]
         openapi: bool,
+        /// Target database: `postgres` (default) or `sqlite` (ADR-015).
+        #[arg(long, default_value = "postgres")]
+        database: String,
         #[command(flatten)]
         flags: GenFlags,
     },

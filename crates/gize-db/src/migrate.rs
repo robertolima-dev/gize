@@ -8,9 +8,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use sqlx::AnyPool;
+use sqlx::any::{AnyPoolOptions, install_default_drivers};
 use sqlx::migrate::{Migration, Migrator};
-use sqlx::postgres::PgPoolOptions;
 
 /// Applied vs pending migrations, each labelled `<version>_<description>`.
 #[derive(Debug, Default)]
@@ -26,8 +26,11 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
         .context("building the async runtime")
 }
 
-async fn connect(database_url: &str) -> Result<PgPool> {
-    PgPoolOptions::new()
+async fn connect(database_url: &str) -> Result<AnyPool> {
+    // The `Any` driver works against both `postgres://` and `sqlite:` URLs (ADR-015), so the
+    // migrator supports either database with one code path.
+    install_default_drivers();
+    AnyPoolOptions::new()
         .max_connections(1)
         .connect(database_url)
         .await
@@ -36,7 +39,7 @@ async fn connect(database_url: &str) -> Result<PgPool> {
 
 /// Versions already recorded in `_sqlx_migrations`. If the table does not exist yet (no
 /// migration has ever run), this is simply empty.
-async fn applied_versions(pool: &PgPool) -> Vec<i64> {
+async fn applied_versions(pool: &AnyPool) -> Vec<i64> {
     sqlx::query_scalar::<_, i64>("SELECT version FROM _sqlx_migrations ORDER BY version")
         .fetch_all(pool)
         .await
