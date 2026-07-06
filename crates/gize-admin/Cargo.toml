@@ -5,8 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Admin UI generator for Gize (Beta phase; see ADR-006)."
-publish = false
+description = "Admin UI generator for Gize: a React SPA scaffolded from the manifest (ADR-006)."
+keywords = ["gize", "admin", "codegen", "react", "scaffolding"]
+categories = ["development-tools"]
 
 [dependencies]
 gize-core.workspace = true
