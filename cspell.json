@@ -31,7 +31,15 @@
     "12factor",
     "TIMESTAMPTZ",
     "uuidv4",
-    "tracing"
+    "tracing",
+    "argon2",
+    "Argon2id",
+    "bcrypt",
+    "scrypt",
+    "pbkdf2",
+    "PASETO",
+    "jsonwebtoken",
+    "dotenvy"
   ],
   "ignorePaths": [
     "target/**",
