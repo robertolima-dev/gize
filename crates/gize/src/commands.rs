@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
 use gize_core::{Manifest, ModelSpec, Module};
-use gize_generator::{Options, Writer, registry, scaffold};
+use gize_generator::{Options, Plan, Writer, registry, scaffold, sync};
 
 use crate::cli::GenFlags;
 
@@ -238,6 +238,88 @@ pub fn make_migration(name: Option<&str>, flags: GenFlags) -> Result<()> {
         println!("\nEdit the SQL, then apply it with:\n  gize migrate");
     }
     Ok(())
+}
+
+/// `gize sync` — reconcile the project from `gize.toml` (ADR-009).
+///
+/// Regenerates any module declared in the manifest whose code is missing, creates a
+/// `CREATE TABLE` migration for any module that lacks one, and wires each module into
+/// `src/app/mod.rs`. Files that exist but differ from the manifest are reported as **drift**
+/// and left untouched unless `--force` is given; `--dry-run` previews without writing.
+pub fn sync(flags: GenFlags) -> Result<()> {
+    ensure_in_project()?;
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+
+    if manifest.modules.is_empty() {
+        println!("No modules declared in gize.toml — nothing to sync.");
+        return Ok(());
+    }
+
+    // 1. Desired code files for every declared module (deterministic; no timestamps).
+    let mut plan = Plan::new();
+    for module in &manifest.modules {
+        plan = plan.extend(
+            scaffold::module_code(module)
+                .with_context(|| format!("planning module `{}`", module.name))?,
+        );
+    }
+
+    // 2. A CREATE TABLE migration only for tables that do not already have one, so re-running
+    //    `sync` never spawns duplicate migrations (idempotent — ADR-011).
+    for module in &manifest.modules {
+        if !create_migration_exists(&module.name)? {
+            let sql = scaffold::module_migration_sql(module)?;
+            plan = plan.create(
+                format!(
+                    "migrations/{}_create_{}.sql",
+                    migration_timestamp(),
+                    module.name
+                ),
+                sql,
+            );
+        }
+    }
+
+    // 3. Diff against the filesystem and apply per the safety flags.
+    let root = Path::new(".");
+    let recon = sync::reconcile(root, &plan)?;
+    let applied = sync::apply(root, &recon, flags.force, flags.dry_run)?;
+    println!(
+        "Reconciling from gize.toml:\n{}",
+        applied.render(flags.dry_run)
+    );
+
+    // 4. Wire each module into src/app/mod.rs (idempotent; a no-op for already-wired ones).
+    for module in &manifest.modules {
+        register_in_app_mod(&module.name, flags)?;
+    }
+
+    // 5. Surface drift explicitly — the conservative default never overwrites hand edits.
+    if !recon.drift.is_empty() && !flags.force {
+        println!(
+            "\n{} file(s) drifted from the manifest and were left untouched. \
+             Review them, or re-run `gize sync --force` to overwrite.",
+            recon.drift.len()
+        );
+    }
+    Ok(())
+}
+
+/// Whether a `*_create_<table>.sql` migration already exists under `migrations/`.
+fn create_migration_exists(table: &str) -> Result<bool> {
+    let dir = Path::new("migrations");
+    if !dir.exists() {
+        return Ok(false);
+    }
+    let suffix = format!("_create_{table}.sql");
+    for entry in fs::read_dir(dir).context("reading migrations/")? {
+        let name = entry?.file_name();
+        if name.to_string_lossy().ends_with(&suffix) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// `gize fmt` — format the project with rustfmt (thin wrapper; ADR-012).

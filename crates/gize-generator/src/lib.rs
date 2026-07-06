@@ -7,6 +7,7 @@
 
 pub mod plan;
 pub mod registry;
+pub mod sync;
 pub mod writer;
 
 pub mod scaffold;

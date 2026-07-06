@@ -47,10 +47,7 @@ fn main() -> Result<()> {
 
         Command::Migrate { status } => commands::migrate(status),
         Command::Serve => commands::serve(),
-        Command::Sync { .. } => commands::not_yet(
-            "sync",
-            "reconcile the project from gize.toml (idempotent, dry-run first)",
-        ),
+        Command::Sync { flags } => commands::sync(flags),
         Command::Doctor => commands::doctor(),
         Command::Fmt => commands::fmt(),
         Command::Check => commands::check(),

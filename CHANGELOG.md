@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Work toward the Alpha (see `docs/roadmap.md`). ADR-before-code: ADR-009 and ADR-011 revised;
 ADR-013 (auth) and ADR-014 (relationships) added.
 
+### Added
+
+- **`gize sync`** — reconcile a project from `gize.toml` (ADR-009). It regenerates any
+  declared module whose code is missing, creates a `CREATE TABLE` migration for any table
+  that lacks one (idempotent — never spawns duplicates), and wires each module into
+  `src/app/mod.rs`. Files that exist but differ from the manifest are reported as **drift**
+  and left untouched unless `--force` is given; `--dry-run` previews without writing. This
+  makes the manifest-driven workflow real: add a `[[module]]` block by hand (or clone a repo
+  with only `gize.toml`) and `gize sync` scaffolds and wires the module. Generation goes
+  through one shared code path (`scaffold::module_code`) with `gize new`/`make crud`, so a
+  synced tree is byte-identical and drift-free.
+
 ### Changed
 
 - **`gize.toml` is now a rich, per-module source of truth** (ADR-009 revision). Each module

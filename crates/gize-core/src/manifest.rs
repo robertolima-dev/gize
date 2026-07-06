@@ -12,6 +12,9 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::ModelSpec;
+use crate::naming::model_name;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
     pub project: Project,
@@ -89,6 +92,14 @@ impl Module {
             fields: Vec::new(),
             belongs_to: Vec::new(),
         }
+    }
+
+    /// Recover the model definition this module describes, for regenerating its code during
+    /// `gize sync` (ADR-009 revision). The struct name is derived from the module/table name
+    /// (`posts` -> `Post`); the fields are re-parsed from their `name:Type` tokens.
+    pub fn model_spec(&self) -> Result<ModelSpec> {
+        ModelSpec::parse(model_name(&self.name), &self.fields)
+            .with_context(|| format!("module `{}` has an invalid field definition", self.name))
     }
 }
 
