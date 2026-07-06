@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
-use gize_core::{Manifest, ModelSpec};
+use gize_core::{Manifest, ModelSpec, Module};
 use gize_generator::{Options, Writer, registry, scaffold};
 
 use crate::cli::GenFlags;
@@ -114,7 +114,8 @@ fn register_in_app_mod(module: &str, flags: GenFlags) -> Result<()> {
     Ok(())
 }
 
-/// Add the module to the manifest's `[modules]` list.
+/// Register a module by name only (`gize make app`). Add-only: never clobbers a module that
+/// already carries a declared shape (e.g. one created by `make crud`).
 fn register_in_manifest(module: &str, flags: GenFlags) -> Result<()> {
     let source = fs::read_to_string("gize.toml").context("reading gize.toml")?;
     let mut manifest = Manifest::from_toml(&source)?;
@@ -123,11 +124,39 @@ fn register_in_manifest(module: &str, flags: GenFlags) -> Result<()> {
         println!("  skip    gize.toml (module already listed)");
         return Ok(());
     }
+    write_manifest(&manifest, flags, "added module")
+}
+
+/// Record a module's full shape (name + fields) in the manifest (`gize make crud`). Upserts,
+/// so re-running with changed fields refreshes the recorded shape (ADR-009 revision).
+fn record_module_in_manifest(module: Module, flags: GenFlags) -> Result<()> {
+    let source = fs::read_to_string("gize.toml").context("reading gize.toml")?;
+    let mut manifest = Manifest::from_toml(&source)?;
+
+    if manifest.module(&module.name) == Some(&module) {
+        println!("  skip    gize.toml (module already up to date)");
+        return Ok(());
+    }
+    let existed = manifest.module(&module.name).is_some();
+    manifest.upsert_module(module);
+    write_manifest(
+        &manifest,
+        flags,
+        if existed {
+            "updated module"
+        } else {
+            "added module"
+        },
+    )
+}
+
+/// Persist a manifest, honoring `--dry-run`, with a consistent one-line report.
+fn write_manifest(manifest: &Manifest, flags: GenFlags, what: &str) -> Result<()> {
     if flags.dry_run {
-        println!("  update  gize.toml (would add module to [modules])");
+        println!("  update  gize.toml (would record module)");
     } else {
         fs::write("gize.toml", manifest.to_toml()?).context("writing gize.toml")?;
-        println!("  update  gize.toml (added module to [modules])");
+        println!("  update  gize.toml ({what})");
     }
     Ok(())
 }
@@ -155,7 +184,14 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     );
 
     register_in_app_mod(&module, flags)?;
-    register_in_manifest(&module, flags)?;
+    record_module_in_manifest(
+        Module {
+            name: module.clone(),
+            fields: model.to_field_tokens(),
+            belongs_to: Vec::new(),
+        },
+        flags,
+    )?;
 
     if !flags.dry_run {
         println!("\nApply the migration with:\n  gize migrate");

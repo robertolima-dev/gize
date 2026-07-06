@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
-## [0.5.1] - 2026-07-05
+## [Unreleased] — Alpha phase
+
+Work toward the Alpha (see `docs/roadmap.md`). ADR-before-code: ADR-009 and ADR-011 revised;
+ADR-013 (auth) and ADR-014 (relationships) added.
+
+### Changed
+
+- **`gize.toml` is now a rich, per-module source of truth** (ADR-009 revision). Each module
+  records its `fields` (the same `name:Type` grammar the CLI accepts) under `[[module]]`, so
+  a project can be reconciled and rebuilt from the manifest alone. `gize new` and `gize make
+  crud` write the module's full shape; the built-in `users` module records its fields too.
+  The legacy names-only form (`[modules] list = [...]`) is still read for backward
+  compatibility and upgraded to `[[module]]` on the next write.
+
+
 
 ### Added
 

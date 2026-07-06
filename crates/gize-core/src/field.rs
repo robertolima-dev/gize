@@ -57,6 +57,21 @@ impl FieldType {
         !matches!(self, Self::String)
     }
 
+    /// The canonical CLI/manifest spelling of this type (the inverse of [`Self::parse`]).
+    /// Used to serialize a field back into a `name:Type` token for `gize.toml` so the
+    /// manifest is normalized regardless of the spelling the user typed (ADR-009 revision).
+    pub fn as_token(self) -> &'static str {
+        match self {
+            Self::String => "String",
+            Self::Bool => "bool",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::F64 => "f64",
+            Self::Uuid => "Uuid",
+            Self::DateTime => "DateTime",
+        }
+    }
+
     /// The PostgreSQL column type used in generated migrations (ADR-011).
     pub fn sql_type(self) -> &'static str {
         match self {
@@ -79,6 +94,12 @@ pub struct Field {
 }
 
 impl Field {
+    /// Serialize this field back into its canonical `name:Type` token (inverse of
+    /// [`Self::parse`] for the type part), for recording in `gize.toml`.
+    pub fn to_token(&self) -> String {
+        format!("{}:{}", self.name, self.ty.as_token())
+    }
+
     /// Parse one `name:Type` token.
     pub fn parse(token: &str) -> Result<Self> {
         let (name, ty) = token
@@ -112,6 +133,12 @@ impl ModelSpec {
             name: name.into(),
             fields,
         })
+    }
+
+    /// Serialize the fields back into canonical `name:Type` tokens, for recording the model's
+    /// shape in `gize.toml` (ADR-009 revision).
+    pub fn to_field_tokens(&self) -> Vec<String> {
+        self.fields.iter().map(Field::to_token).collect()
     }
 }
 

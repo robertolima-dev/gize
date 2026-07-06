@@ -2,7 +2,7 @@
 //! job. This separation keeps generation testable and makes `--dry-run` free.
 
 use gize_core::naming::table_name;
-use gize_core::{Manifest, ModelSpec};
+use gize_core::{Manifest, ModelSpec, Module};
 use gize_templates::{crud, model, module, project, user};
 
 use crate::plan::Plan;
@@ -17,7 +17,13 @@ use crate::registry;
 pub fn new_project(name: &str, with_user: bool, timestamp: &str) -> Plan {
     let mut manifest = Manifest::new(name);
     if with_user {
-        manifest.add_module("users");
+        // Record the built-in users module with its full shape so `gize sync` can
+        // reconcile/rebuild it from the manifest alone (ADR-009 revision).
+        manifest.upsert_module(Module {
+            name: "users".to_string(),
+            fields: user::spec().to_field_tokens(),
+            belongs_to: Vec::new(),
+        });
     }
 
     // Pre-wire `users` into app/mod.rs by running the same registry edit `make app` uses,

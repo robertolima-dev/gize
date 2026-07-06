@@ -9,4 +9,4 @@ pub mod manifest;
 pub mod naming;
 
 pub use field::{Field, FieldType, ModelSpec};
-pub use manifest::Manifest;
+pub use manifest::{Manifest, Module, Relation};
