@@ -12,8 +12,8 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::ModelSpec;
 use crate::naming::model_name;
+use crate::{ModelSpec, Relation};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
@@ -76,13 +76,6 @@ pub struct Module {
     pub belongs_to: Vec<Relation>,
 }
 
-/// A `belongs_to` relationship: this module references `target`'s primary key (ADR-014).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Relation {
-    /// The module (and table) this one points at, e.g. `users`.
-    pub target: String,
-}
-
 impl Module {
     /// A module with just a name and no declared shape (used by `gize make app`, and when
     /// upgrading a legacy names-only manifest).
@@ -98,7 +91,12 @@ impl Module {
     /// `gize sync` (ADR-009 revision). The struct name is derived from the module/table name
     /// (`posts` -> `Post`); the fields are re-parsed from their `name:Type` tokens.
     pub fn model_spec(&self) -> Result<ModelSpec> {
-        ModelSpec::parse(model_name(&self.name), &self.fields)
+        // Feed the scalar field tokens plus a `name:belongs_to:target` token per relationship,
+        // so `ModelSpec::parse` reconstructs the same fields (incl. FK columns) it produced
+        // at `make crud` time.
+        let mut tokens = self.fields.clone();
+        tokens.extend(self.belongs_to.iter().map(Relation::to_token));
+        ModelSpec::parse(model_name(&self.name), &tokens)
             .with_context(|| format!("module `{}` has an invalid field definition", self.name))
     }
 }
@@ -180,6 +178,51 @@ impl Manifest {
         true
     }
 
+    /// The modules ordered so every `belongs_to` target comes before the module that
+    /// references it (ADR-014). Used when creating migrations so a foreign key's target table
+    /// already exists. Errors on a dependency cycle. Targets that are not themselves modules
+    /// (pre-existing tables) impose no ordering.
+    pub fn modules_in_dependency_order(&self) -> Result<Vec<&Module>> {
+        use std::collections::{HashMap, HashSet};
+
+        let by_name: HashMap<&str, &Module> =
+            self.modules.iter().map(|m| (m.name.as_str(), m)).collect();
+        let mut ordered = Vec::new();
+        let mut done: HashSet<&str> = HashSet::new();
+        let mut on_stack: HashSet<&str> = HashSet::new();
+
+        fn visit<'a>(
+            m: &'a Module,
+            by_name: &HashMap<&str, &'a Module>,
+            done: &mut HashSet<&'a str>,
+            on_stack: &mut HashSet<&'a str>,
+            ordered: &mut Vec<&'a Module>,
+        ) -> Result<()> {
+            if done.contains(m.name.as_str()) {
+                return Ok(());
+            }
+            if !on_stack.insert(m.name.as_str()) {
+                anyhow::bail!("cyclic belongs_to relationship involving `{}`", m.name);
+            }
+            for r in &m.belongs_to {
+                if r.target != m.name {
+                    if let Some(target) = by_name.get(r.target.as_str()) {
+                        visit(target, by_name, done, on_stack, ordered)?;
+                    }
+                }
+            }
+            on_stack.remove(m.name.as_str());
+            done.insert(m.name.as_str());
+            ordered.push(m);
+            Ok(())
+        }
+
+        for m in &self.modules {
+            visit(m, &by_name, &mut done, &mut on_stack, &mut ordered)?;
+        }
+        Ok(ordered)
+    }
+
     /// Insert or replace a module's full declaration (name + fields + relationships),
     /// keeping the list sorted. Returns `true` if the module was newly added, `false` if an
     /// existing entry was replaced. Used by `gize make model`/`make crud`, which know the
@@ -224,6 +267,7 @@ mod tests {
             name: "posts".to_string(),
             fields: vec!["title:String".to_string()],
             belongs_to: vec![Relation {
+                field: "author".to_string(),
                 target: "users".to_string(),
             }],
         });
@@ -274,6 +318,67 @@ mod tests {
         let upgraded = m.to_toml().unwrap();
         assert!(upgraded.contains("[[module]]"));
         assert!(!upgraded.contains("list ="));
+    }
+
+    #[test]
+    fn orders_modules_so_targets_precede_dependents() {
+        let mut m = Manifest::new("blog");
+        // Declared out of dependency order and alphabetically: comments -> posts -> users.
+        m.upsert_module(Module {
+            name: "comments".to_string(),
+            fields: vec!["body:String".to_string()],
+            belongs_to: vec![Relation {
+                field: "post".to_string(),
+                target: "posts".to_string(),
+            }],
+        });
+        m.upsert_module(Module {
+            name: "posts".to_string(),
+            fields: vec!["title:String".to_string()],
+            belongs_to: vec![Relation {
+                field: "author".to_string(),
+                target: "users".to_string(),
+            }],
+        });
+        m.upsert_module(Module::named("users"));
+
+        let ordered: Vec<&str> = m
+            .modules_in_dependency_order()
+            .unwrap()
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
+        let pos = |n: &str| ordered.iter().position(|x| *x == n).unwrap();
+        assert!(
+            pos("users") < pos("posts"),
+            "users before posts: {ordered:?}"
+        );
+        assert!(
+            pos("posts") < pos("comments"),
+            "posts before comments: {ordered:?}"
+        );
+    }
+
+    #[test]
+    fn dependency_ordering_detects_cycles() {
+        let mut m = Manifest::new("loop");
+        m.upsert_module(Module {
+            name: "a".to_string(),
+            fields: vec![],
+            belongs_to: vec![Relation {
+                field: "b".to_string(),
+                target: "b".to_string(),
+            }],
+        });
+        m.upsert_module(Module {
+            name: "b".to_string(),
+            fields: vec![],
+            belongs_to: vec![Relation {
+                field: "a".to_string(),
+                target: "a".to_string(),
+            }],
+        });
+        assert!(m.modules_in_dependency_order().is_err());
     }
 
     #[test]

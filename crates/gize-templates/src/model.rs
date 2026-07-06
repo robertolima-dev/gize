@@ -40,12 +40,24 @@ pub fn migration_sql(model: &ModelSpec) -> String {
         ));
     }
 
+    // Foreign-key constraints for each `belongs_to` relationship (ADR-014). The FK column
+    // itself is emitted by the loop above (it is a synthetic `<name>_id` field); this adds
+    // the referential constraint.
+    let mut constraints = String::new();
+    for r in &model.relations {
+        constraints.push_str(&format!(
+            ",\n    FOREIGN KEY ({col}) REFERENCES {target}(id)",
+            col = r.fk_column(),
+            target = r.target,
+        ));
+    }
+
     format!(
         r#"-- Migration: create {table}
 CREATE TABLE {table} (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 {columns}    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(){constraints}
 );
 "#
     )

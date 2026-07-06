@@ -28,6 +28,7 @@ pub fn spec() -> ModelSpec {
             field("password", FieldType::String),
             field("is_admin", FieldType::Bool),
         ],
+        relations: Vec::new(),
     }
 }
 

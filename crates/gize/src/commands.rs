@@ -188,7 +188,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
         Module {
             name: module.clone(),
             fields: model.to_field_tokens(),
-            belongs_to: Vec::new(),
+            belongs_to: model.relations.clone(),
         },
         flags,
     )?;
@@ -349,8 +349,9 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     }
 
     // 2. A CREATE TABLE migration only for tables that do not already have one, so re-running
-    //    `sync` never spawns duplicate migrations (idempotent — ADR-011).
-    for module in &manifest.modules {
+    //    `sync` never spawns duplicate migrations (idempotent — ADR-011). Ordered so a
+    //    foreign key's target table is created before the table that references it (ADR-014).
+    for module in manifest.modules_in_dependency_order()? {
         if !create_migration_exists(&module.name)? {
             let sql = scaffold::module_migration_sql(module)?;
             plan = plan.create(

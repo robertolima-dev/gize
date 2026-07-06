@@ -13,6 +13,14 @@ ADR-013 (auth) and ADR-014 (relationships) added.
 
 ### Added
 
+- **`belongs_to` relationships** in models (ADR-014). Declare a foreign key with a field
+  token: `gize make crud Post title:String author:belongs_to:users`. The generated migration
+  gets an `author_id UUID NOT NULL` column plus a `FOREIGN KEY (author_id) REFERENCES
+  users(id)` constraint, and the model/DTOs carry `author_id`. Relationships are recorded
+  under `[[module.belongs_to]]` in `gize.toml`, so `gize sync` rebuilds them; `sync` creates
+  migrations in dependency order (a target table before the table that references it) and
+  errors on a relationship cycle. Only `belongs_to`/one-to-many is supported in the Alpha; the
+  reverse side is a plain query, and many-to-many is deferred.
 - **`gize make migration` model diffing** (ADR-011). With no name, it now diffs each module's
   declared fields (`gize.toml`) against the columns in that table's existing migrations and
   emits `ALTER TABLE` migrations to reconcile. New columns are added automatically (as
