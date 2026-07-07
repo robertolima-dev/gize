@@ -19,16 +19,16 @@ pub struct Status {
     pub pending: Vec<String>,
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime> {
+pub(crate) fn runtime() -> Result<tokio::runtime::Runtime> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .context("building the async runtime")
 }
 
-async fn connect(database_url: &str) -> Result<AnyPool> {
-    // The `Any` driver works against both `postgres://` and `sqlite:` URLs (ADR-015), so the
-    // migrator supports either database with one code path.
+pub(crate) async fn connect(database_url: &str) -> Result<AnyPool> {
+    // The `Any` driver works against `postgres://`, `sqlite:` and `mysql://` URLs (ADR-015), so
+    // one code path serves every supported database.
     install_default_drivers();
     AnyPoolOptions::new()
         .max_connections(1)

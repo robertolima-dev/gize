@@ -6,6 +6,7 @@
 
 use gize_core::FieldType;
 
+pub mod admin;
 pub mod migrate;
 
 /// The Postgres column type for a Gize field type. Single source of truth reused by the

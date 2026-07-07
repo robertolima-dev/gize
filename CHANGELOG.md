@@ -8,7 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.3] - 2026-07-07
+## [0.7.4] - 2026-07-07
+
+### Added
+
+- **`gize createadmin`** (ADR-017) — Gize's `createsuperuser`. Creates the first admin user
+  (`is_admin = true`) in the database, interactively (prompts for email, name and a hidden,
+  confirmed password) or non-interactively for CI (`--email`/`--name` with the password read
+  from `--password-env`, never a raw argument). The password is hashed with Argon2id in the same
+  format the generated login verifies, so the admin can sign in immediately. It reads the dialect
+  from `gize.toml` and connects via SQLx `AnyPool`, so it works against Postgres, SQLite and
+  MySQL; it rejects a duplicate email and points you to `gize migrate` if the `users` table does
+  not exist yet. Verified end-to-end on SQLite (create, then authenticate through the generated
+  `/users/login`).
+
+### Changed
+
+- The CLI's `sqlx` now enables the `mysql` feature, so `gize migrate` and `gize createadmin`
+  connect to `mysql://` databases (completing the runtime story for the MySQL dialect added in
+  0.7.3).
 
 ### Added
 

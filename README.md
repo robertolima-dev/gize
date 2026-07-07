@@ -87,6 +87,7 @@ headless browser; SQLite runs full CRUD with auth and relationships).
 | `gize make admin` | ✅ | Generate a separate React admin SPA for all resources |
 | `gize sync` | ✅ | Reconcile the project from `gize.toml` |
 | `gize migrate` | ✅ | Apply / inspect migrations (Postgres, SQLite or MySQL) |
+| `gize createadmin` | ✅ | Create the first admin user (interactive or CI) |
 | `gize serve` | ✅ | Build and run the app |
 | `gize fmt` / `gize check` | ✅ | rustfmt / clippy wrappers |
 | `gize doctor` | ✅ | Diagnose environment/project |
@@ -248,6 +249,26 @@ migrator (tracked in the `_sqlx_migrations` table, ordered and idempotent).
 gize migrate            # apply all pending
 gize migrate --status   # list applied [x] vs pending [ ]
 ```
+
+### `gize createadmin`
+
+Creates the first admin user (`is_admin = true`) in the database — Gize's `createsuperuser`
+([ADR-017](./ADR/adr-017-createadmin.md)). Reads the dialect from `gize.toml` and connects with
+`DATABASE_URL`, so it works against Postgres, SQLite or MySQL. The password is hashed with
+Argon2id (the same format the generated login verifies), so the created admin can sign in
+immediately.
+
+```bash
+# Interactive: prompts for Email, Name, then a hidden (confirmed) Password.
+gize createadmin
+
+# Non-interactive (CI): email/name as flags, password from an env var — never an argument.
+GIZE_ADMIN_PASSWORD=... gize createadmin \
+  --email admin@example.com --name Admin --password-env GIZE_ADMIN_PASSWORD
+```
+
+A duplicate email is rejected, and if the `users` table has not been migrated yet the command
+tells you to run `gize migrate` first.
 
 ### `gize serve`
 

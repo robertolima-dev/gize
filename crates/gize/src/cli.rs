@@ -50,6 +50,20 @@ pub enum Command {
     /// Generate application pieces (app, model, crud, migration, admin).
     #[command(subcommand)]
     Make(MakeCommand),
+    /// Create the first admin user in the database (ADR-017). Interactive by default; pass
+    /// `--email`/`--name` and `--password-env` for non-interactive/CI use.
+    Createadmin {
+        /// Admin email. Prompted for if omitted.
+        #[arg(long)]
+        email: Option<String>,
+        /// Admin display name (the `users.name` column). Prompted for if omitted.
+        #[arg(long)]
+        name: Option<String>,
+        /// Read the password from this environment variable instead of prompting (for CI).
+        /// The password is never accepted as a direct argument.
+        #[arg(long, value_name = "VAR")]
+        password_env: Option<String>,
+    },
     /// Apply pending database migrations.
     Migrate {
         /// Show applied/pending migrations instead of applying.

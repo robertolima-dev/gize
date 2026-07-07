@@ -2,6 +2,7 @@
 
 mod cli;
 mod commands;
+mod password;
 
 use anyhow::Result;
 use clap::Parser;
@@ -52,6 +53,11 @@ fn main() -> Result<()> {
             MakeCommand::Admin { name, flags } => commands::make_admin(name.as_deref(), flags),
         },
 
+        Command::Createadmin {
+            email,
+            name,
+            password_env,
+        } => commands::create_admin(email, name, password_env),
         Command::Migrate { status } => commands::migrate(status),
         Command::Serve => commands::serve(),
         Command::Sync { flags } => commands::sync(flags),

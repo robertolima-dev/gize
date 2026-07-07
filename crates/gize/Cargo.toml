@@ -21,3 +21,5 @@ gize-db.workspace = true
 anyhow.workspace = true
 clap = { workspace = true }
 dotenvy.workspace = true
+argon2.workspace = true
+rpassword.workspace = true
