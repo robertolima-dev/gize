@@ -37,7 +37,7 @@ pub enum Command {
         /// Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`).
         #[arg(long)]
         openapi: bool,
-        /// Target database: `postgres` (default) or `sqlite` (ADR-015).
+        /// Target database: `postgres` (default), `sqlite` or `mysql` (ADR-015).
         #[arg(long, default_value = "postgres")]
         database: String,
         /// Mount CRUD routes under a versioned API prefix, e.g. `--api-version 1` (or `v1`)

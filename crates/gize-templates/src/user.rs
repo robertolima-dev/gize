@@ -136,13 +136,7 @@ impl From<sqlx::Error> for Error {
             return Error::NotFound;
         }
         // Map database integrity violations to client errors instead of a generic 500.
-        if let sqlx::Error::Database(ref db) = error {
-            match db.code().as_deref() {
-                Some("__UNIQUE_CODE__") => return Error::Conflict,   // unique violation
-                Some("__FK_CODE__") => return Error::ForeignKey, // foreign-key violation
-                _ => {}
-            }
-        }
+__INTEGRITY_MAPPING__
         Error::Database(error)
     }
 }
@@ -171,8 +165,7 @@ impl IntoResponse for Error {
     }
 }
 "#
-    .replace("__UNIQUE_CODE__", dialect.unique_violation_code())
-    .replace("__FK_CODE__", dialect.foreign_key_violation_code())
+    .replace("__INTEGRITY_MAPPING__", &dialect.integrity_error_mapping())
 }
 
 /// `handler.rs` for users: the CRUD handlers (hashing the password on create/update) plus
@@ -312,9 +305,12 @@ pub fn routes() -> Router<AppState> {
 /// the primary key, `is_admin` type/default and timestamps follow `dialect`.
 pub fn migration_sql(dialect: Dialect) -> String {
     let bool_ty = dialect.column_type(FieldType::Bool);
-    // Postgres has a `false` literal; SQLite stores booleans as `0`/`1`.
+    // The String column type follows the dialect (TEXT on Postgres/SQLite, VARCHAR(255) on
+    // MySQL where an indexable type is required for the `email UNIQUE` constraint).
+    let str_ty = dialect.column_type(FieldType::String);
+    // Postgres and MySQL accept the `false` literal; SQLite stores booleans as `0`/`1`.
     let false_default = match dialect {
-        Dialect::Postgres => "false",
+        Dialect::Postgres | Dialect::MySql => "false",
         Dialect::Sqlite => "0",
     };
     let ts = dialect.timestamp_type_default();
@@ -322,9 +318,9 @@ pub fn migration_sql(dialect: Dialect) -> String {
         r#"-- Migration: create users
 CREATE TABLE users (
     {id_pk},
-    name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
+    name {str_ty} NOT NULL,
+    email {str_ty} NOT NULL UNIQUE,
+    password {str_ty} NOT NULL,
     is_admin {bool_ty} NOT NULL DEFAULT {false_default},
     created_at {ts},
     updated_at {ts}

@@ -206,6 +206,44 @@ fn api_versioning_nests_routes_and_records_the_prefix() {
 }
 
 #[test]
+fn mysql_project_uses_binary_uuid_and_no_returning() {
+    // MySQL has no RETURNING and no UUID generator, so the repository writes then re-reads by
+    // the app-generated id, and the schema uses BINARY(16) / VARCHAR(255) (ADR-015 amendment).
+    let root = unique_tmpdir();
+    apply(
+        &root,
+        &scaffold::new_project("shop", true, false, Dialect::MySql, None, TS),
+        Options::default(),
+    );
+
+    let migration =
+        fs::read_to_string(root.join(format!("migrations/{TS}_create_users.sql"))).unwrap();
+    assert!(migration.contains("id BINARY(16) PRIMARY KEY"));
+    assert!(migration.contains("email VARCHAR(255) NOT NULL UNIQUE"));
+    assert!(migration.contains("created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"));
+
+    let repo = fs::read_to_string(root.join("src/app/users/repository.rs")).unwrap();
+    assert!(!repo.contains("RETURNING"), "MySQL must not use RETURNING");
+    assert!(repo.contains("MySqlPool"));
+    // create/update re-read the row via find() after writing.
+    assert_eq!(repo.matches("find(pool, id).await").count(), 2);
+
+    let error = fs::read_to_string(root.join("src/app/users/error.rs")).unwrap();
+    assert!(error.contains("MySqlDatabaseError"));
+    assert!(error.contains("1062 => return Error::Conflict"));
+
+    let state = fs::read_to_string(root.join("src/state.rs")).unwrap();
+    assert!(state.contains("MySqlPool"));
+    let cargo = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    assert!(cargo.contains("\"mysql\""));
+    assert!(
+        fs::read_to_string(root.join("gize.toml"))
+            .unwrap()
+            .contains("database = \"mysql\"")
+    );
+}
+
+#[test]
 fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
