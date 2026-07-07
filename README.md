@@ -73,9 +73,11 @@ What you get is normal Rust you can read and edit: Gize writes the boring 80%, y
 
 ## Project status
 
-**Beta.** On top of the MVP + Alpha, the Beta adds the Admin UI, OpenAPI, a second database
-(SQLite) and a plugin API — all verified end-to-end (the Admin CRUD is exercised in a real
-headless browser; SQLite runs full CRUD with auth and relationships).
+**Release Candidate (v0.8.x).** The Beta feature set (Admin UI, OpenAPI, multi-database, plugin
+API) is complete and the **1.0 feature set is frozen** — the project is now hardening rather than
+adding features. See [`STABILITY.md`](./STABILITY.md) for what is stable and the deprecation
+policy, and the [roadmap](./docs/roadmap.md) for what remains before 1.0 (security review,
+benchmarks, docs). New frameworks such as Actix are planned for v2.0.
 
 | Command | State | What it does |
 | --- | --- | --- |
