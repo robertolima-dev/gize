@@ -35,6 +35,54 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  generated:
+    name: generated apps · fmt-check + type-check (postgres · sqlite · mysql)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build the gize CLI
+        run: cargo build -p gize
+
+      - name: Generate apps across dialects + features; each must be rustfmt-clean and type-check
+        run: |
+          set -euo pipefail
+          GIZE="$PWD/target/debug/gize"
+          WORK="$(mktemp -d)"; cd "$WORK"
+
+          # A generated app must land rustfmt-clean (ADR-020) and compile. Runtime queries mean
+          # `cargo check` needs no database, so every dialect is covered without a DB service.
+          check() {
+            echo "::group::$1"
+            ( cd "$1" && cargo fmt --all -- --check && cargo check )
+            echo "::endgroup::"
+          }
+
+          # Postgres (default) with OpenAPI + WebSocket + a CRUD resource.
+          "$GIZE" new pg --openapi --ws
+          ( cd pg && "$GIZE" make crud Product name:String price:i32 active:bool )
+          check pg
+
+          # SQLite, versioned API.
+          "$GIZE" new lite --database sqlite --api-version 1
+          ( cd lite && "$GIZE" make crud Item name:String )
+          check lite
+
+          # MySQL with a foreign-key resource.
+          "$GIZE" new my --database mysql
+          ( cd my && "$GIZE" make crud Order total:i64 buyer:belongs_to:users )
+          check my
+
+          echo "OK: generated apps are rustfmt-clean and type-check on postgres, sqlite and mysql"
+
   e2e:
     name: e2e · generate → migrate → serve → call routes (SQLite)
     runs-on: ubuntu-latest

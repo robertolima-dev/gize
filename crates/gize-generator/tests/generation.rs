@@ -139,6 +139,7 @@ fn force_overwrites_and_dry_run_writes_nothing() {
         Options {
             force: true,
             dry_run: true,
+            format: false,
         },
     );
     assert!(
@@ -158,6 +159,7 @@ fn force_overwrites_and_dry_run_writes_nothing() {
         Options {
             force: true,
             dry_run: false,
+            format: false,
         },
     );
     assert_eq!(fs::read_to_string(&sentinel).unwrap(), generated);

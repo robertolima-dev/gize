@@ -17,6 +17,9 @@ impl From<GenFlags> for Options {
         Options {
             force: f.force,
             dry_run: f.dry_run,
+            // The CLI formats generated Rust with rustfmt on write (ADR-020); tests/plugins
+            // that use `Options::default()` keep the raw template output.
+            format: true,
         }
     }
 }
@@ -136,6 +139,9 @@ fn register_in_app_mod(module: &str, flags: GenFlags) -> Result<()> {
         println!("  update  src/app/mod.rs (would register module + routes)");
     } else {
         fs::write(path, edit.content).context("writing src/app/mod.rs")?;
+        // rustfmt normalizes the wiring we just edited: sorts the `mod` declarations and
+        // collapses/wraps the merge chain, so `app/mod.rs` stays rustfmt-clean (ADR-020).
+        gize_generator::format_rust_files(&[path.to_path_buf()]);
         println!("  update  src/app/mod.rs (registered module + routes)");
     }
     Ok(())
@@ -483,6 +489,17 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     let root = Path::new(".");
     let recon = sync::reconcile(root, &plan)?;
     let applied = sync::apply(root, &recon, flags.force, flags.dry_run)?;
+    // Format the Rust files sync just wrote, matching `gize new`/`make` output (ADR-020).
+    if !flags.dry_run {
+        let written: Vec<std::path::PathBuf> = applied
+            .created
+            .iter()
+            .chain(applied.overwritten.iter())
+            .filter(|f| f.ends_with(".rs"))
+            .map(|f| root.join(f))
+            .collect();
+        gize_generator::format_rust_files(&written);
+    }
     println!(
         "Reconciling from gize.toml:\n{}",
         applied.render(flags.dry_run)
