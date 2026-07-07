@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-07-07
+
+### Changed
+
+- **Generated code is now rustfmt-clean** (ADR-020). The CLI runs `rustfmt` over the Rust it
+  writes (via a new `Options.format` flag on the `Writer`, plus `gize sync` and the `app/mod.rs`
+  registry edit), so a fresh `gize new` project — and everything `gize make …`/`sync` emit —
+  passes `cargo fmt --check` out of the box, for any model/field names. It is best-effort: if
+  `rustfmt` is unavailable the files are left valid but unformatted. Templates and their
+  snapshots stay the raw, reviewed source (snapshots read the in-memory plan), so tests remain
+  deterministic and independent of the rustfmt version.
+
+### CI
+
+- New **`generated`** job: generates apps across all dialects and features (postgres +
+  OpenAPI + WebSocket + CRUD, versioned SQLite, MySQL with a foreign key) and asserts each is
+  `cargo fmt --check`-clean and type-checks — a regression net for the generated-code contract.
+
 ### Added
 
 - **`examples/gize-chat`** — an official reference app: a real-time group chat built with

@@ -3,7 +3,8 @@
 //! `dry_run` is set.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{Context, Result};
 
@@ -16,6 +17,10 @@ pub struct Options {
     pub force: bool,
     /// Compute and report actions but touch no files.
     pub dry_run: bool,
+    /// Run `rustfmt` over the `.rs` files written, so generated code is formatted the way the
+    /// toolchain would format it (ADR-020). Off by default (tests/snapshots pin the raw template
+    /// output); the CLI turns it on.
+    pub format: bool,
 }
 
 /// What actually happened (or would happen) for each file in a plan.
@@ -69,6 +74,7 @@ impl Writer {
     /// Apply a plan rooted at `root`. Relative op paths are resolved against `root`.
     pub fn apply(&self, root: &Path, plan: &Plan) -> Result<Report> {
         let mut report = Report::default();
+        let mut written_rs: Vec<PathBuf> = Vec::new();
 
         for op in &plan.ops {
             let path = root.join(&op.path);
@@ -95,6 +101,9 @@ impl Writer {
                         }
                         fs::write(&path, &op.contents)
                             .with_context(|| format!("writing {display}"))?;
+                        if display.ends_with(".rs") {
+                            written_rs.push(path.clone());
+                        }
                     }
 
                     if exists {
@@ -106,8 +115,29 @@ impl Writer {
             }
         }
 
+        if self.opts.format {
+            format_rust_files(&written_rs);
+        }
+
         Ok(report)
     }
+}
+
+/// Format `files` in place with `rustfmt`, using the generated projects' edition (2024).
+///
+/// Best-effort (ADR-020): if `rustfmt` is missing or fails, the files are left as written —
+/// valid Rust, just unformatted — so generation never fails because of formatting. Keeping this
+/// at the write boundary lets the templates (and their snapshots) stay the raw, reviewed source
+/// while the code that lands on disk matches what `cargo fmt` would produce.
+pub fn format_rust_files(files: &[PathBuf]) {
+    if files.is_empty() {
+        return;
+    }
+    let _ = Command::new("rustfmt")
+        .arg("--edition")
+        .arg("2024")
+        .args(files)
+        .status();
 }
 
 #[cfg(test)]
@@ -152,6 +182,7 @@ mod tests {
         let opts = Options {
             force: true,
             dry_run: false,
+            format: false,
         };
         let report = Writer::new(opts).apply(&root, &plan).unwrap();
         assert_eq!(report.overwritten, vec!["a.txt".to_string()]);
@@ -165,6 +196,7 @@ mod tests {
         let opts = Options {
             force: false,
             dry_run: true,
+            format: false,
         };
         let report = Writer::new(opts).apply(&root, &plan).unwrap();
         assert_eq!(report.created, vec!["a.txt".to_string()]);

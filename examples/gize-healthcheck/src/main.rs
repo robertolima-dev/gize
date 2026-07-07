@@ -47,6 +47,7 @@ fn main() -> Result<()> {
     let opts = Options {
         force: args.iter().any(|a| a == "--force"),
         dry_run: args.iter().any(|a| a == "--dry-run"),
+        format: true,
     };
     let rest: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 

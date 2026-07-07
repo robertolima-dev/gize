@@ -39,6 +39,9 @@ pub fn register_module(source: &str, module: &str) -> Result<Edit> {
         );
     }
 
+    // Insert the `mod` declaration and the `.merge(...)` call in registration order. The CLI runs
+    // rustfmt over `app/mod.rs` after this edit (ADR-020), which sorts the `mod` declarations and
+    // collapses/wraps the merge chain, so the file lands rustfmt-clean regardless of module count.
     let with_mod = insert_after_marker(source, MODULES_MARKER, &mod_decl);
     let merge_call = format!("        .merge({module}::routes())");
     let content = insert_before_marker(&with_mod, ROUTES_MARKER, &merge_call);
