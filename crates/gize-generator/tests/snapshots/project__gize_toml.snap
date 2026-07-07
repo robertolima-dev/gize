@@ -10,3 +10,4 @@ orm = "sqlx"
 authentication = true
 admin = false
 openapi = false
+websocket = false

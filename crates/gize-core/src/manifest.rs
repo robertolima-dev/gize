@@ -93,6 +93,8 @@ pub struct Features {
     pub admin: bool,
     #[serde(default)]
     pub openapi: bool,
+    #[serde(default)]
+    pub websocket: bool,
 }
 
 /// One application module as recorded in `gize.toml` (ADR-009 revision).

@@ -79,7 +79,7 @@ headless browser; SQLite runs full CRUD with auth and relationships).
 
 | Command | State | What it does |
 | --- | --- | --- |
-| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite\|mysql`, `--openapi`, `--api-version`) |
+| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite\|mysql`, `--openapi`, `--api-version`, `--ws`) |
 | `gize make app` | ✅ | Scaffold a module and wire it in |
 | `gize make model` | ✅ | Generate a model + migration |
 | `gize make crud` | ✅ | Generate a full CRUD resource (incl. `belongs_to`) |
@@ -194,6 +194,7 @@ migration) already registered in `src/app/mod.rs` and `gize.toml`
 | `--database <db>` | Target database: `postgres` (default), `sqlite` or `mysql` ([ADR-015](./ADR/adr-015-second-database.md)). |
 | `--openapi` | Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`) ([ADR-010](./ADR/adr-010-openapi.md)). |
 | `--api-version <v>` | Mount CRUD routes under a versioned prefix. `--api-version 1` (or `v1`) serves them at `/api/v1/...`; omit for root-mounted routes ([ADR-016](./ADR/adr-016-api-versioning.md)). |
+| `--ws` | Scaffold a WebSocket module (`src/app/ws/`) with a typed echo endpoint at `/ws` ([ADR-018](./ADR/adr-018-websocket.md)). |
 
 With `--api-version`, the version is recorded in `gize.toml` under `[api]` and the whole API
 (including the OpenAPI paths) is mounted under `/<prefix>/<version>`:

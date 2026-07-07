@@ -59,7 +59,7 @@ fn new_project_materializes_expected_tree_on_disk() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
 
@@ -94,7 +94,7 @@ fn new_project_materializes_expected_tree_on_disk() {
 #[test]
 fn regenerating_is_idempotent_and_preserves_hand_edits() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS);
+    let plan = scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS);
     apply(&root, &plan, Options::default());
 
     // Simulate a developer editing a generated file.
@@ -125,7 +125,7 @@ fn regenerating_is_idempotent_and_preserves_hand_edits() {
 #[test]
 fn force_overwrites_and_dry_run_writes_nothing() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS);
+    let plan = scaffold::new_project("shop", false, false, false, Dialect::Postgres, None, TS);
     apply(&root, &plan, Options::default());
 
     let sentinel = root.join("Cargo.toml");
@@ -173,6 +173,7 @@ fn api_versioning_nests_routes_and_records_the_prefix() {
             "shop",
             true,
             false,
+            false,
             Dialect::Postgres,
             Some(Api::from_version("1")),
             TS,
@@ -192,7 +193,7 @@ fn api_versioning_nests_routes_and_records_the_prefix() {
     let plain = unique_tmpdir();
     apply(
         &plain,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
     let router = fs::read_to_string(plain.join("src/router.rs")).unwrap();
@@ -212,7 +213,7 @@ fn mysql_project_uses_binary_uuid_and_no_returning() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::MySql, None, TS),
+        &scaffold::new_project("shop", true, false, false, Dialect::MySql, None, TS),
         Options::default(),
     );
 
@@ -244,11 +245,58 @@ fn mysql_project_uses_binary_uuid_and_no_returning() {
 }
 
 #[test]
+fn websocket_module_is_scaffolded_and_wired_only_with_ws() {
+    // With --ws: the ws module exists, is wired into app/mod.rs, and pulls its extra deps.
+    let with = unique_tmpdir();
+    apply(
+        &with,
+        &scaffold::new_project("shop", true, false, true, Dialect::Postgres, None, TS),
+        Options::default(),
+    );
+    for f in ["mod.rs", "message.rs", "handler.rs", "routes.rs"] {
+        assert!(
+            with.join(format!("src/app/ws/{f}")).is_file(),
+            "expected src/app/ws/{f}"
+        );
+    }
+    let app_mod = fs::read_to_string(with.join("src/app/mod.rs")).unwrap();
+    assert!(app_mod.contains("mod ws;"));
+    assert!(app_mod.contains(".merge(ws::routes())"));
+    let routes = fs::read_to_string(with.join("src/app/ws/routes.rs")).unwrap();
+    assert!(routes.contains("\"/ws\""));
+    let cargo = fs::read_to_string(with.join("Cargo.toml")).unwrap();
+    assert!(cargo.contains("axum = { version = \"0.7\", features = [\"ws\"] }"));
+    assert!(cargo.contains("serde_json"));
+    assert!(
+        fs::read_to_string(with.join("gize.toml"))
+            .unwrap()
+            .contains("websocket = true")
+    );
+
+    // Without --ws: no ws module, and Cargo stays lean (plain axum, no serde_json).
+    let without = unique_tmpdir();
+    apply(
+        &without,
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
+        Options::default(),
+    );
+    assert!(!without.join("src/app/ws").exists());
+    assert!(
+        !fs::read_to_string(without.join("src/app/mod.rs"))
+            .unwrap()
+            .contains("ws")
+    );
+    let cargo = fs::read_to_string(without.join("Cargo.toml")).unwrap();
+    assert!(cargo.contains("axum = \"0.7\""));
+    assert!(!cargo.contains("serde_json"));
+}
+
+#[test]
 fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS),
+        &scaffold::new_project("shop", false, false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
     apply(
@@ -311,7 +359,7 @@ fn content<'a>(plan: &'a Plan, rel: &str) -> &'a str {
 #[test]
 fn project_skeleton_matches_snapshots() {
     // No built-in users here, so the skeleton templates are isolated from the CRUD ones.
-    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS);
+    let plan = scaffold::new_project("shop", false, false, false, Dialect::Postgres, None, TS);
     for rel in [
         "Cargo.toml",
         "gize.toml",
@@ -371,7 +419,7 @@ fn sync_rebuilds_a_deleted_module_from_the_manifest() {
     // A project with the built-in users plus a Product CRUD, both recorded in gize.toml.
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
     apply(
@@ -409,7 +457,7 @@ fn sync_reports_drift_and_preserves_hand_edits_without_force() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
 
@@ -460,7 +508,7 @@ fn record_products_in_manifest(root: &Path) {
 fn auth_and_users_slice_match_snapshots() {
     // The security-sensitive generated code (auth module + the users slice that hashes
     // passwords and issues tokens) is pinned so template edits are always reviewed.
-    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS);
+    let plan = scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS);
     for rel in [
         "src/auth/mod.rs",
         "src/app/users/handler.rs",

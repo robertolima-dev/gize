@@ -4,7 +4,7 @@
 use anyhow::Result;
 use gize_core::naming::table_name;
 use gize_core::{Api, Dialect, Manifest, ModelSpec, Module};
-use gize_templates::{auth, crud, model, module, openapi, project, user};
+use gize_templates::{auth, crud, model, module, openapi, project, user, ws};
 
 use crate::plan::Plan;
 use crate::registry;
@@ -145,6 +145,7 @@ pub fn new_project(
     name: &str,
     with_user: bool,
     with_openapi: bool,
+    with_ws: bool,
     dialect: Dialect,
     api: Option<Api>,
     timestamp: &str,
@@ -154,6 +155,7 @@ pub fn new_project(
     // and write routes are guarded, so the manifest reflects it.
     manifest.features.authentication = true;
     manifest.features.openapi = with_openapi;
+    manifest.features.websocket = with_ws;
     // Record the API version prefix, if any, so the router nests routes under it and
     // `gize sync` keeps the same mount (ADR-016).
     manifest.api = api;
@@ -172,7 +174,11 @@ pub fn new_project(
     // Pre-wire the built-in modules into app/mod.rs using the same registry edit `make app`
     // uses, keeping a single source of truth for the module/route wiring format.
     let mut app_mod = project::app_mod_rs();
-    for module in [(with_user, "users"), (with_openapi, "openapi")] {
+    for module in [
+        (with_user, "users"),
+        (with_openapi, "openapi"),
+        (with_ws, "ws"),
+    ] {
         if module.0 {
             app_mod = registry::register_module(&app_mod, module.1)
                 .expect("app_mod_rs template carries the gize markers")
@@ -181,7 +187,7 @@ pub fn new_project(
     }
 
     let mut plan = Plan::new()
-        .create("Cargo.toml", project::cargo_toml(name, dialect))
+        .create("Cargo.toml", project::cargo_toml(name, dialect, with_ws))
         .create("gize.toml", project::gize_toml(&manifest))
         .create(".env.example", project::env_example(name, dialect))
         .create(".gitignore", "/target\n.env\n")
@@ -208,7 +214,21 @@ pub fn new_project(
         plan = plan
             .extend(openapi_slice(&manifest).expect("fresh manifest yields a valid OpenAPI spec"));
     }
+    if with_ws {
+        plan = plan.extend(ws_module_plan());
+    }
     plan
+}
+
+/// The optional WebSocket module (ADR-018): a self-contained `src/app/ws/` with a typed echo
+/// endpoint. Static (does not depend on the modules), so `gize sync` reconciles it drift-aware
+/// when `features.websocket` is on, like the OpenAPI module.
+pub fn ws_module_plan() -> Plan {
+    Plan::new()
+        .create("src/app/ws/mod.rs", ws::mod_rs())
+        .create("src/app/ws/message.rs", ws::message_rs())
+        .create("src/app/ws/handler.rs", ws::handler_rs())
+        .create("src/app/ws/routes.rs", ws::routes_rs())
 }
 
 /// The built-in `users` vertical slice for a fresh project: the generic CRUD templates plus
@@ -310,6 +330,7 @@ mod tests {
             "shop",
             false,
             false,
+            false,
             Dialect::Postgres,
             None,
             "20260704120000",
@@ -325,6 +346,7 @@ mod tests {
     fn new_project_without_user_omits_users_slice() {
         let plan = new_project(
             "shop",
+            false,
             false,
             false,
             Dialect::Postgres,
@@ -344,6 +366,7 @@ mod tests {
         let plan = new_project(
             "shop",
             true,
+            false,
             false,
             Dialect::Postgres,
             None,
@@ -417,6 +440,7 @@ mod tests {
             "blog",
             true,
             true,
+            false,
             Dialect::Postgres,
             None,
             "20260704120000",
@@ -451,6 +475,7 @@ mod tests {
         let plan = new_project(
             "blog",
             true,
+            false,
             false,
             Dialect::Postgres,
             None,

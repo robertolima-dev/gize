@@ -37,6 +37,9 @@ pub enum Command {
         /// Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`).
         #[arg(long)]
         openapi: bool,
+        /// Scaffold a WebSocket module (`src/app/ws/`) with a typed echo endpoint (ADR-018).
+        #[arg(long)]
+        ws: bool,
         /// Target database: `postgres` (default), `sqlite` or `mysql` (ADR-015).
         #[arg(long, default_value = "postgres")]
         database: String,

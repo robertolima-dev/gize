@@ -8,7 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.4] - 2026-07-07
+## [0.7.5] - 2026-07-07
+
+### Added
+
+- **Optional WebSocket scaffolding** (ADR-018). `gize new --ws` generates a self-contained
+  `src/app/ws/` module — a typed echo endpoint (`ClientMessage`/`ServerMessage` enums parsed
+  with `serde_json`) with an Axum upgrade handler, wired into the app router like any module and
+  recorded as `features.websocket = true` in `gize.toml`. The route inherits the project's API
+  prefix: `/ws`, or `/api/v1/ws` on a versioned project. Axum's `ws` feature and `serde_json` are
+  added to the generated `Cargo.toml` only when `--ws` is used, so other projects stay lean, and
+  `gize sync` reconciles the module drift-aware when the feature is on. Verified end-to-end: a
+  real WebSocket client sent an `echo` and received it back, and a malformed frame got a typed
+  `error` reply.
 
 ### Added
 
