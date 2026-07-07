@@ -44,6 +44,7 @@ pub fn new_project(
     name: &str,
     no_user: bool,
     openapi: bool,
+    ws: bool,
     database: &str,
     api_version: Option<&str>,
     flags: GenFlags,
@@ -59,6 +60,7 @@ pub fn new_project(
         name,
         !no_user,
         openapi,
+        ws,
         dialect,
         api,
         &migration_timestamp(),
@@ -80,6 +82,12 @@ pub fn new_project(
         }
         if openapi {
             println!("OpenAPI spec at `/openapi.json` and docs at `/docs` once running.");
+        }
+        if ws {
+            let route = api_version
+                .map(|v| format!("{}/ws", Api::from_version(v).mount_path()))
+                .unwrap_or_else(|| "/ws".to_string());
+            println!("WebSocket echo endpoint at `{route}` (typed messages in src/app/ws/).");
         }
         println!("Next:\n  cd {name}\n  cp .env.example .env\n  gize serve");
     }
@@ -466,6 +474,11 @@ pub fn sync(flags: GenFlags) -> Result<()> {
         plan = plan.extend(scaffold::admin_shell_plan(&manifest));
     }
 
+    // 2d. WebSocket (ADR-018): reconcile the static `src/app/ws/` module drift-aware.
+    if manifest.features.websocket {
+        plan = plan.extend(scaffold::ws_module_plan());
+    }
+
     // 3. Diff against the filesystem and apply per the safety flags.
     let root = Path::new(".");
     let recon = sync::reconcile(root, &plan)?;
@@ -491,6 +504,11 @@ pub fn sync(flags: GenFlags) -> Result<()> {
                 .context("writing openapi.json")?;
             println!("  update  openapi.json (refreshed from gize.toml)");
         }
+    }
+    // The WebSocket module is wired like any module but is not a `[[module]]` resource, so
+    // register it here when the feature is on (ADR-018).
+    if manifest.features.websocket {
+        register_in_app_mod("ws", flags)?;
     }
 
     // Refresh the derived admin descriptors from the current manifest (always overwritten).

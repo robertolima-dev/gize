@@ -11,5 +11,6 @@ pub mod module;
 pub mod openapi;
 pub mod project;
 pub mod user;
+pub mod ws;
 
 pub use model::{blank_migration_sql, migration_sql, model_rs};

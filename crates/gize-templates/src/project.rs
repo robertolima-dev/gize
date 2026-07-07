@@ -3,8 +3,21 @@
 use gize_core::{Dialect, Manifest};
 
 /// `Cargo.toml` for the generated application. The `dialect` selects the sqlx driver feature
-/// (ADR-015).
-pub fn cargo_toml(name: &str, dialect: Dialect) -> String {
+/// (ADR-015); `websocket` enables Axum's `ws` feature and `serde_json` for typed WebSocket
+/// messages (ADR-018).
+pub fn cargo_toml(name: &str, dialect: Dialect, websocket: bool) -> String {
+    // Axum's WebSocket support is behind its `ws` feature, and the generated `ws` module parses
+    // typed messages with `serde_json`, so both are added only when `--ws` is used.
+    let axum_dep = if websocket {
+        "axum = { version = \"0.7\", features = [\"ws\"] }"
+    } else {
+        "axum = \"0.7\""
+    };
+    let serde_json_dep = if websocket {
+        "\nserde_json = \"1\""
+    } else {
+        ""
+    };
     format!(
         r#"[package]
 name = "{name}"
@@ -12,9 +25,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.7"
+{axum_dep}
 tokio = {{ version = "1", features = ["full"] }}
-serde = {{ version = "1", features = ["derive"] }}
+serde = {{ version = "1", features = ["derive"] }}{serde_json_dep}
 sqlx = {{ version = "0.8", features = ["runtime-tokio", "{driver}", "uuid", "chrono"] }}
 uuid = {{ version = "1", features = ["v4", "serde"] }}
 chrono = {{ version = "0.4", features = ["serde"] }}
