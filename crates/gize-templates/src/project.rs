@@ -114,21 +114,29 @@ impl AppState {
 }
 
 /// `src/router.rs`: top-level router that mounts each module's routes.
-pub fn router_rs() -> String {
-    r#"use axum::Router;
+/// `src/router.rs`: builds the top-level router. When `api_mount` is `Some` (a versioned
+/// project, ADR-016) the app is nested under it (e.g. `/api/v1`); otherwise it is merged at
+/// the root, byte-identical to an unversioned project.
+pub fn router_rs(api_mount: Option<&str>) -> String {
+    let routes_line = match api_mount {
+        Some(mount) => format!(".nest(\"{mount}\", app::routes())"),
+        None => ".merge(app::routes())".to_string(),
+    };
+    format!(
+        r#"use axum::Router;
 
 use crate::app;
 use crate::state::AppState;
 
 /// Build the application router. `gize make app` registers module routers here.
-pub fn build(state: AppState) -> Router {
+pub fn build(state: AppState) -> Router {{
     Router::new()
         // gize:routes (do not remove this marker)
-        .merge(app::routes())
+        {routes_line}
         .with_state(state)
-}
+}}
 "#
-    .to_string()
+    )
 }
 
 /// `src/config/mod.rs`: typed runtime configuration.

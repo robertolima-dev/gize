@@ -23,8 +23,16 @@ fn main() -> Result<()> {
             no_user,
             openapi,
             database,
+            api_version,
             flags,
-        } => commands::new_project(&name, no_user, openapi, &database, flags),
+        } => commands::new_project(
+            &name,
+            no_user,
+            openapi,
+            &database,
+            api_version.as_deref(),
+            flags,
+        ),
 
         Command::Make(make) => match make {
             MakeCommand::Model {

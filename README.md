@@ -79,7 +79,7 @@ headless browser; SQLite runs full CRUD with auth and relationships).
 
 | Command | State | What it does |
 | --- | --- | --- |
-| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite`, `--openapi`) |
+| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite`, `--openapi`, `--api-version`) |
 | `gize make app` | ✅ | Scaffold a module and wire it in |
 | `gize make model` | ✅ | Generate a model + migration |
 | `gize make crud` | ✅ | Generate a full CRUD resource (incl. `belongs_to`) |
@@ -190,6 +190,21 @@ migration) already registered in `src/app/mod.rs` and `gize.toml`
 | Flag | Effect |
 | --- | --- |
 | `--no-user` | Scaffold the bare skeleton, without the built-in `users` resource. |
+| `--database <db>` | Target database: `postgres` (default) or `sqlite` ([ADR-015](./ADR/adr-015-second-database.md)). |
+| `--openapi` | Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`) ([ADR-010](./ADR/adr-010-openapi.md)). |
+| `--api-version <v>` | Mount CRUD routes under a versioned prefix. `--api-version 1` (or `v1`) serves them at `/api/v1/...`; omit for root-mounted routes ([ADR-016](./ADR/adr-016-api-versioning.md)). |
+
+With `--api-version`, the version is recorded in `gize.toml` under `[api]` and the whole API
+(including the OpenAPI paths) is mounted under `/<prefix>/<version>`:
+
+```toml
+[api]
+version = "v1"
+prefix = "/api"
+```
+
+Without it, routes stay at the root (`/users`) exactly as before — existing projects are
+unaffected.
 
 ### `gize make app <name>`
 
