@@ -83,6 +83,25 @@ jobs:
 
           echo "OK: generated apps are rustfmt-clean and type-check on postgres, sqlite and mysql"
 
+  bench:
+    name: benchmarks · generation speed (informational)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # Runs the criterion benchmarks so they never rot and their numbers show up in the logs.
+      # The hard regression *gate* is the `generation_stays_within_a_generous_time_budget` test
+      # in the `quality` job — a coarse budget that fails on catastrophic slowdowns without
+      # flaking on runner variance; criterion here is for tracking the real numbers.
+      - name: Run generation benchmarks
+        run: cargo bench -p gize-generator
+
   e2e:
     name: e2e · generate → migrate → serve → call routes (SQLite)
     runs-on: ubuntu-latest

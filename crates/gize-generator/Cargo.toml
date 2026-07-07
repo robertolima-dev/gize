@@ -16,3 +16,10 @@ gize-openapi.workspace = true
 gize-admin.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "generation"
+harness = false

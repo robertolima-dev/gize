@@ -294,6 +294,25 @@ fn websocket_module_is_scaffolded_and_wired_only_with_ws() {
 }
 
 #[test]
+fn generation_stays_within_a_generous_time_budget() {
+    // A coarse, non-flaky *regression gate*, not a micro-benchmark (those live in
+    // `benches/generation.rs`). Building plans is pure and fast, so a huge headroom over the
+    // real cost lets this catch a catastrophic slowdown (e.g. an accidental O(n²) or a
+    // pathological allocation) without ever flaking on a loaded CI runner.
+    let model = product_model();
+    let start = std::time::Instant::now();
+    for _ in 0..1000 {
+        let _ = scaffold::new_project("shop", true, true, true, Dialect::Postgres, None, TS);
+        let _ = scaffold::make_crud(&model, Dialect::Postgres, TS);
+    }
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "1000 project+crud plan builds took {elapsed:?} (budget 30s) — likely a perf regression"
+    );
+}
+
+#[test]
 fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
