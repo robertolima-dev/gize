@@ -79,14 +79,14 @@ headless browser; SQLite runs full CRUD with auth and relationships).
 
 | Command | State | What it does |
 | --- | --- | --- |
-| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite`, `--openapi`, `--api-version`) |
+| `gize new` | ✅ | Scaffold a project (built-in `users` + auth; `--database sqlite\|mysql`, `--openapi`, `--api-version`) |
 | `gize make app` | ✅ | Scaffold a module and wire it in |
 | `gize make model` | ✅ | Generate a model + migration |
 | `gize make crud` | ✅ | Generate a full CRUD resource (incl. `belongs_to`) |
 | `gize make migration` | ✅ | Blank (named) or model-diff `ALTER` migrations |
 | `gize make admin` | ✅ | Generate a separate React admin SPA for all resources |
 | `gize sync` | ✅ | Reconcile the project from `gize.toml` |
-| `gize migrate` | ✅ | Apply / inspect migrations (Postgres or SQLite) |
+| `gize migrate` | ✅ | Apply / inspect migrations (Postgres, SQLite or MySQL) |
 | `gize serve` | ✅ | Build and run the app |
 | `gize fmt` / `gize check` | ✅ | rustfmt / clippy wrappers |
 | `gize doctor` | ✅ | Diagnose environment/project |
@@ -190,7 +190,7 @@ migration) already registered in `src/app/mod.rs` and `gize.toml`
 | Flag | Effect |
 | --- | --- |
 | `--no-user` | Scaffold the bare skeleton, without the built-in `users` resource. |
-| `--database <db>` | Target database: `postgres` (default) or `sqlite` ([ADR-015](./ADR/adr-015-second-database.md)). |
+| `--database <db>` | Target database: `postgres` (default), `sqlite` or `mysql` ([ADR-015](./ADR/adr-015-second-database.md)). |
 | `--openapi` | Generate an OpenAPI spec (`/openapi.json`) and docs UI (`/docs`) ([ADR-010](./ADR/adr-010-openapi.md)). |
 | `--api-version <v>` | Mount CRUD routes under a versioned prefix. `--api-version 1` (or `v1`) serves them at `/api/v1/...`; omit for root-mounted routes ([ADR-016](./ADR/adr-016-api-versioning.md)). |
 

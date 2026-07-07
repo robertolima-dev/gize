@@ -64,3 +64,35 @@ the same seam.
 - MySQL becomes an additive follow-up (new `Dialect` impl) with no further template churn.
 - Acceptance (Beta): a project targeting SQLite generates, migrates and serves CRUD; Postgres
   remains the untouched default.
+
+## Amendment (2026-07-07): MySQL as the third dialect
+
+MySQL joins the seam (`gize new --database mysql`). Postgres stays the default and SQLite is
+unchanged. MySQL is additive — one new `Dialect::MySql` variant plus two small, contained
+template branches — and required no churn to the Postgres/SQLite output (snapshots only drifted
+in one comment's whitespace).
+
+Three MySQL specifics drove the design:
+
+- **UUID id → `BINARY(16)`.** sqlx encodes/decodes `uuid::Uuid` natively as `BINARY(16)` for
+  MySQL, so the shared model struct, binds and `FromRow` stay uniform across dialects. `CHAR(36)`
+  was rejected: it would force the model's `id` type (or a `Hyphenated` wrapper) to diverge per
+  dialect. The app supplies the id on insert (MySQL has no `gen_random_uuid()`), reusing the
+  existing `app_generates_id` path.
+- **No `RETURNING`.** MySQL supports neither `INSERT ... RETURNING` nor `UPDATE ... RETURNING`.
+  Because the app knows the id, the generated repository writes then re-`find`s the row. `update`
+  detects a missing row via that `find`, **not** `rows_affected`, since MySQL reports zero
+  affected rows for a no-op update of an existing row.
+- **Integrity errors by number.** MySQL reports both unique and foreign-key violations as
+  SQLSTATE `23000`, so `.code()` cannot tell them apart. The generated `error.rs` downcasts to
+  `MySqlDatabaseError` and matches the numeric code (`1062` duplicate key, `1452` foreign key).
+  This moved the whole classification block into `Dialect::integrity_error_mapping`, replacing
+  the earlier per-code accessors.
+
+Other mappings: `String` → `VARCHAR(255)` (indexable, so `email UNIQUE` works — unlike `TEXT`
+without a prefix length), `DATETIME`/`CURRENT_TIMESTAMP` for timestamps, `BOOLEAN`, and bare
+positional `?` placeholders.
+
+**Limitations:** MySQL `VARCHAR(255)` caps string columns (long text needs a hand edit to
+`TEXT`); `DATETIME` has no timezone (stored as UTC by convention). Verified by generating a
+MySQL project (with a foreign-key resource) and `cargo check`; a live-MySQL CRUD run is manual.

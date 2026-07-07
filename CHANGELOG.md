@@ -8,7 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.2] - 2026-07-07
+## [0.7.3] - 2026-07-07
+
+### Added
+
+- **MySQL support** (ADR-015 amendment). `gize new --database mysql` targets MySQL through the
+  existing dialect seam — Postgres stays the default and SQLite is unchanged. The generated
+  schema uses `BINARY(16)` ids (sqlx's native `uuid::Uuid` mapping, so the model stays uniform
+  across dialects), `VARCHAR(255)`/`DATETIME`/`BOOLEAN` columns, and positional `?` binds. Since
+  MySQL has no `RETURNING`, the repository writes then re-reads the row by its app-generated id
+  (and `update` detects a missing row via that read, not `rows_affected`). Integrity errors are
+  classified by MySQL's numeric code (`1062`/`1452`) because it reports both unique and
+  foreign-key violations as SQLSTATE `23000`. Verified by generating a MySQL project with a
+  foreign-key resource and `cargo check`.
 
 ### Added
 

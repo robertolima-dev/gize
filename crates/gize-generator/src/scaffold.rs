@@ -158,10 +158,7 @@ pub fn new_project(
     // `gize sync` keeps the same mount (ADR-016).
     manifest.api = api;
     // Record the chosen database so `gize sync` regenerates against the same dialect (ADR-015).
-    manifest.stack.database = match dialect {
-        Dialect::Postgres => "postgres".to_string(),
-        Dialect::Sqlite => "sqlite".to_string(),
-    };
+    manifest.stack.database = dialect.sqlx_feature().to_string();
     if with_user {
         // Record the built-in users module with its full shape so `gize sync` can
         // reconcile/rebuild it from the manifest alone (ADR-009 revision).

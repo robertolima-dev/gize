@@ -128,13 +128,7 @@ impl From<sqlx::Error> for Error {
             return Error::NotFound;
         }
         // Map database integrity violations to client errors instead of a generic 500.
-        if let sqlx::Error::Database(ref db) = error {
-            match db.code().as_deref() {
-                Some("__UNIQUE_CODE__") => return Error::Conflict,   // unique violation
-                Some("__FK_CODE__") => return Error::ForeignKey, // foreign-key violation
-                _ => {}
-            }
-        }
+__INTEGRITY_MAPPING__
         Error::Database(error)
     }
 }
@@ -163,20 +157,13 @@ impl IntoResponse for Error {
 "#,
         model,
     )
-    .replace("__UNIQUE_CODE__", dialect.unique_violation_code())
-    .replace("__FK_CODE__", dialect.foreign_key_violation_code())
+    .replace("__INTEGRITY_MAPPING__", &dialect.integrity_error_mapping())
 }
 
 /// `repository.rs`: SQLx persistence. The `dialect` chooses the pool type, bind placeholders
 /// and — on SQLite, which has no `gen_random_uuid()` — whether the app supplies `id` on insert
 /// (ADR-015).
 pub fn repository_rs(model: &ModelSpec, dialect: Dialect) -> String {
-    // On SQLite the app generates `id`; on Postgres the database default does.
-    let id_bind = if dialect.app_generates_id() {
-        "        .bind(uuid::Uuid::new_v4())\n"
-    } else {
-        ""
-    };
     let insert_cols: Vec<&str> = model.fields.iter().map(|f| f.name.as_str()).collect();
     let columns = if dialect.app_generates_id() {
         // `id` first (at $1/?1), then the fields (shifted by one).
@@ -201,11 +188,79 @@ pub fn repository_rs(model: &ModelSpec, dialect: Dialect) -> String {
         .join(", ");
     let id_placeholder = dialect.placeholder(model.fields.len() + 1);
     let field_binds = create_binds(model);
-    let create_binds = format!("{id_bind}{field_binds}");
-    let update_binds = format!("{field_binds}\n        .bind(id)");
 
-    base(
-        r#"use sqlx::__POOL__;
+    // Postgres/SQLite read the written row back with `RETURNING *` in one statement. MySQL has
+    // no `RETURNING`, so it writes then re-`find`s by the app-generated `id` (ADR-015). The
+    // `create`/`update` function bodies differ accordingly; `list`/`find`/`delete` are shared.
+    let (create_fn, update_fn) = if dialect.supports_returning() {
+        // On SQLite the app generates `id`; on Postgres the database default does.
+        let id_bind = if dialect.app_generates_id() {
+            "        .bind(uuid::Uuid::new_v4())\n"
+        } else {
+            ""
+        };
+        let create_binds = format!("{id_bind}{field_binds}");
+        let update_binds = format!("{field_binds}\n        .bind(id)");
+        (
+            format!(
+                r#"pub async fn create(pool: &__POOL__, input: &Create__NAME__) -> Result<__NAME__, sqlx::Error> {{
+    sqlx::query_as::<_, __NAME__>(
+        "INSERT INTO __TABLE__ ({columns}) VALUES ({placeholders}) RETURNING *",
+    )
+{create_binds}
+        .fetch_one(pool)
+        .await
+}}"#
+            ),
+            format!(
+                r#"pub async fn update(
+    pool: &__POOL__,
+    id: uuid::Uuid,
+    input: &Update__NAME__,
+) -> Result<__NAME__, sqlx::Error> {{
+    sqlx::query_as::<_, __NAME__>(
+        "UPDATE __TABLE__ SET {update_set}, updated_at = __NOW__ WHERE id = {id_placeholder} RETURNING *",
+    )
+{update_binds}
+        .fetch_one(pool)
+        .await
+}}"#
+            ),
+        )
+    } else {
+        // MySQL: the app supplies `id`, so we can re-read the row after writing. `update` relies
+        // on `find` (not `rows_affected`) to detect a missing row — MySQL reports 0 affected rows
+        // for a no-op update of an existing row, which would otherwise look like "not found".
+        (
+            format!(
+                r#"pub async fn create(pool: &__POOL__, input: &Create__NAME__) -> Result<__NAME__, sqlx::Error> {{
+    let id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO __TABLE__ ({columns}) VALUES ({placeholders})")
+        .bind(id)
+{field_binds}
+        .execute(pool)
+        .await?;
+    find(pool, id).await
+}}"#
+            ),
+            format!(
+                r#"pub async fn update(
+    pool: &__POOL__,
+    id: uuid::Uuid,
+    input: &Update__NAME__,
+) -> Result<__NAME__, sqlx::Error> {{
+    sqlx::query("UPDATE __TABLE__ SET {update_set}, updated_at = __NOW__ WHERE id = {id_placeholder}")
+{field_binds}
+        .bind(id)
+        .execute(pool)
+        .await?;
+    find(pool, id).await
+}}"#
+            ),
+        )
+    };
+
+    let assembled = r#"use sqlx::__POOL__;
 
 use super::dto::{Create__NAME__, Update__NAME__};
 use super::model::__NAME__;
@@ -223,27 +278,9 @@ pub async fn find(pool: &__POOL__, id: uuid::Uuid) -> Result<__NAME__, sqlx::Err
         .await
 }
 
-pub async fn create(pool: &__POOL__, input: &Create__NAME__) -> Result<__NAME__, sqlx::Error> {
-    sqlx::query_as::<_, __NAME__>(
-        "INSERT INTO __TABLE__ (__COLUMNS__) VALUES (__PLACEHOLDERS__) RETURNING *",
-    )
-__CREATE_BINDS__
-        .fetch_one(pool)
-        .await
-}
+__CREATE_FN__
 
-pub async fn update(
-    pool: &__POOL__,
-    id: uuid::Uuid,
-    input: &Update__NAME__,
-) -> Result<__NAME__, sqlx::Error> {
-    sqlx::query_as::<_, __NAME__>(
-        "UPDATE __TABLE__ SET __UPDATE_SET__, updated_at = __NOW__ WHERE id = __ID_PH__ RETURNING *",
-    )
-__UPDATE_BINDS__
-        .fetch_one(pool)
-        .await
-}
+__UPDATE_FN__
 
 pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), sqlx::Error> {
     let result = sqlx::query("DELETE FROM __TABLE__ WHERE id = __P1__")
@@ -255,18 +292,14 @@ pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), sqlx::Error> 
     }
     Ok(())
 }
-"#,
-        model,
-    )
-    .replace("__POOL__", dialect.pool_type())
-    .replace("__P1__", &dialect.placeholder(1))
-    .replace("__NOW__", dialect.now_expr())
-    .replace("__COLUMNS__", &columns)
-    .replace("__PLACEHOLDERS__", &placeholders)
-    .replace("__UPDATE_SET__", &update_set)
-    .replace("__ID_PH__", &id_placeholder)
-    .replace("__CREATE_BINDS__", &create_binds)
-    .replace("__UPDATE_BINDS__", &update_binds)
+"#
+    .replace("__CREATE_FN__", &create_fn)
+    .replace("__UPDATE_FN__", &update_fn);
+
+    base(&assembled, model)
+        .replace("__POOL__", dialect.pool_type())
+        .replace("__P1__", &dialect.placeholder(1))
+        .replace("__NOW__", dialect.now_expr())
 }
 
 /// `service.rs`: business layer that maps `sqlx::Error` to the module error.
