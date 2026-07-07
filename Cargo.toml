@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "examples/gize-healthcheck"]
+# `gize-chat` is a full *generated* app example: it keeps the standalone Cargo.toml `gize new`
+# produces (its own deps, not workspace-inherited), so it is excluded from the workspace and
+# built on its own.
+exclude = ["examples/gize-chat"]
 
 [workspace.package]
 version = "0.7.6"

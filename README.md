@@ -543,6 +543,17 @@ gize ──> gize-generator ──> gize-templates ──┐
 Design decisions live in [`ADR/`](./ADR); the vision, MVP scope, and roadmap live in
 [`docs/`](./docs).
 
+## Examples
+
+- [`examples/gize-chat`](./examples/gize-chat) — a real-time group chat: `gize new --ws` plus a
+  `Message` resource, the built-in users/auth and an admin, on SQLite. It shows the Gize idea end
+  to end — everything is generated, and turning the WebSocket echo starter into a real broadcast
+  chat is a small, readable hand edit you own. Run it with `gize migrate && gize serve`, then open
+  <http://localhost:8080>.
+- [`examples/gize-healthcheck`](./examples/gize-healthcheck) — a tiny external plugin
+  (`gize-<name>`) that generates a `/health` route ([ADR-008](./ADR/adr-008-plugins.md),
+  plugin API v0).
+
 ## Developing Gize
 
 ```bash

@@ -1,0 +1,24 @@
+mod app;
+mod auth;
+mod config;
+mod router;
+mod state;
+
+use anyhow::Result;
+
+use config::Config;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
+    let config = Config::from_env();
+    let state = state::AppState::from_env().await?;
+    let app = router::build(state);
+
+    let addr = format!("0.0.0.0:{}", config.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("gize app listening on {addr}");
+    axum::serve(listener, app).await?;
+    Ok(())
+}

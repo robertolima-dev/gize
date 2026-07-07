@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/gize-chat`** — an official reference app: a real-time group chat built with
+  `gize new --ws` plus a `Message` resource, the built-in users/auth and an admin, on SQLite. It
+  showcases the framework end to end, with the WebSocket echo starter hand-extended into a real
+  broadcast chat (a `tokio::broadcast` channel in `AppState`, persisting through the generated
+  resource). Kept as a standalone generated project (excluded from the workspace), verified to
+  build, and its broadcast + persistence exercised end-to-end.
+
 ## [0.7.6] - 2026-07-07
 
 ### Changed
