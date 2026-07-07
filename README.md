@@ -76,8 +76,9 @@ What you get is normal Rust you can read and edit: Gize writes the boring 80%, y
 **Release Candidate (v0.8.x).** The Beta feature set (Admin UI, OpenAPI, multi-database, plugin
 API) is complete and the **1.0 feature set is frozen** — the project is now hardening rather than
 adding features. See [`STABILITY.md`](./STABILITY.md) for what is stable and the deprecation
-policy, and the [roadmap](./docs/roadmap.md) for what remains before 1.0 (security review,
-benchmarks, docs). New frameworks such as Actix are planned for v2.0.
+policy, [`SECURITY.md`](./SECURITY.md) for the generated apps' security model, and the
+[roadmap](./docs/roadmap.md) for what remains before 1.0 (benchmarks, docs). New frameworks such
+as Actix are planned for v2.0.
 
 | Command | State | What it does |
 | --- | --- | --- |

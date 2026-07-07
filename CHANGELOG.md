@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-07
+
+### Security
+
+- **Security review of the generated stack** (RC hardening — [`SECURITY.md`](./SECURITY.md)):
+  - Generated database errors are now **logged server-side and never returned to clients** — a
+    raw `sqlx::Error` in a 500 body could leak schema/SQL/connection details; clients now get a
+    generic message.
+  - **Login is constant-time with respect to account existence**: an unknown email is verified
+    against a throwaway Argon2 hash, closing a user-enumeration timing side channel.
+  - New **`SECURITY.md`** documents vulnerability reporting and the generated apps' security
+    model — the Argon2id + JWT (HS256, no insecure default, HS256-pinned) baseline, and the
+    responsibilities that remain the app's: **authorization/roles** (`require_auth` checks a
+    valid token, not ownership or `is_admin`), **public read routes** (which expose user
+    emails), **production CORS**, admin **token storage**, and **JWT secret strength**.
+
 ## [0.8.0] - 2026-07-07 — Release Candidate
 
 Gize enters the **RC phase**. The 1.0 feature set is **frozen** and the project shifts from
