@@ -1,0 +1,29 @@
+[project]
+name = "chat"
+
+[stack]
+framework = "axum"
+database = "sqlite"
+orm = "sqlx"
+
+[features]
+authentication = true
+admin = true
+openapi = false
+websocket = true
+
+[[module]]
+name = "messages"
+fields = [
+    "content:String",
+    "username:String",
+]
+
+[[module]]
+name = "users"
+fields = [
+    "name:String",
+    "email:String",
+    "password:String",
+    "is_admin:bool",
+]
