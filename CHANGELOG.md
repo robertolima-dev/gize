@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.5] - 2026-07-07
+## [0.7.6] - 2026-07-07
+
+### Changed
+
+- **`gize serve` starts the admin dev server** (ADR-019). When a project has a generated admin,
+  `gize serve` now runs the API and the admin dev server together: it detects a package manager
+  (pnpm → npm → yarn), installs the admin's dependencies on first run, prints both URLs, and
+  supervises both processes so neither is left orphaned (Ctrl-C stops both). New flags select the
+  mode: `--api-only`, `--admin-only`, `--with-admin`. A project without an admin behaves exactly
+  as before (API only), and no new dependencies or `gize.toml` config were added. Node.js is a
+  soft requirement for the admin path only. Verified end-to-end: the API (`:8080`) and admin
+  (`:5173`) came up together and tore down with no orphaned processes.
 
 ### Added
 

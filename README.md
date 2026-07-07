@@ -88,7 +88,7 @@ headless browser; SQLite runs full CRUD with auth and relationships).
 | `gize sync` | ✅ | Reconcile the project from `gize.toml` |
 | `gize migrate` | ✅ | Apply / inspect migrations (Postgres, SQLite or MySQL) |
 | `gize createadmin` | ✅ | Create the first admin user (interactive or CI) |
-| `gize serve` | ✅ | Build and run the app |
+| `gize serve` | ✅ | Build and run the app (and the admin dev server, when present) |
 | `gize fmt` / `gize check` | ✅ | rustfmt / clippy wrappers |
 | `gize doctor` | ✅ | Diagnose environment/project |
 | `gize <plugin>` | ✅ | Run a `gize-<name>` plugin (plugin API v0) |
@@ -275,6 +275,18 @@ tells you to run `gize migrate` first.
 
 Builds and runs the generated application (`cargo run`), streaming its logs. Reads
 `DATABASE_URL` and `PORT` (default `8080`) from the environment.
+
+When the project has a generated admin ([ADR-006](./ADR/adr-006-admin.md)), `gize serve` also
+starts the **admin dev server** alongside the API ([ADR-019](./ADR/adr-019-serve-admin.md)). It
+detects a package manager (pnpm → npm → yarn), runs the install on first use, and prints both
+URLs; Ctrl-C stops both. This needs Node.js for the admin path only.
+
+```bash
+gize serve                # API + admin dev server (when an admin exists)
+gize serve --api-only     # just the API
+gize serve --admin-only   # just the admin dev server
+gize serve --with-admin   # explicitly both
+```
 
 ### `gize doctor`
 

@@ -73,8 +73,20 @@ pub enum Command {
         #[arg(long)]
         status: bool,
     },
-    /// Run the generated application.
-    Serve,
+    /// Run the generated application, and (by default, when an admin exists) its admin dev
+    /// server (ADR-019).
+    Serve {
+        /// Run only the API — do not start the admin dev server.
+        #[arg(long, conflicts_with_all = ["admin_only", "with_admin"])]
+        api_only: bool,
+        /// Run only the admin dev server — do not start the API.
+        #[arg(long, conflicts_with_all = ["api_only", "with_admin"])]
+        admin_only: bool,
+        /// Explicitly start the admin dev server alongside the API (the default when an admin
+        /// has been generated).
+        #[arg(long, conflicts_with_all = ["api_only", "admin_only"])]
+        with_admin: bool,
+    },
     /// Reconcile the project from gize.toml.
     Sync {
         #[command(flatten)]

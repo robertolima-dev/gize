@@ -61,7 +61,11 @@ fn main() -> Result<()> {
             password_env,
         } => commands::create_admin(email, name, password_env),
         Command::Migrate { status } => commands::migrate(status),
-        Command::Serve => commands::serve(),
+        Command::Serve {
+            api_only,
+            admin_only,
+            with_admin,
+        } => commands::serve(api_only, admin_only, with_admin),
         Command::Sync { flags } => commands::sync(flags),
         Command::Doctor => commands::doctor(),
         Command::Fmt => commands::fmt(),
