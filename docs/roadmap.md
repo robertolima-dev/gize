@@ -103,7 +103,8 @@ frameworks such as Actix move to v2.0) and the project is hardening the existing
 - [x] Generated-code contract enforced in CI: apps across every dialect + feature are
       rustfmt-clean and type-check (ADR-020).
 - [ ] Upgrade/migration guide between Gize versions (regen-safe templates).
-- [ ] Performance benchmarks + regression gates in CI.
+- [x] Performance benchmarks + regression gates in CI — criterion benches for the generation
+      paths, plus a coarse budget test that fails on catastrophic slowdowns.
 - [x] Security review (auth, generated SQL, admin) — see [`SECURITY.md`](../SECURITY.md).
 - [ ] Complete docs: Getting Started, Architecture, Cookbook, FAQ, Migration Guide.
 

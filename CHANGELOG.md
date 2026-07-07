@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.1] - 2026-07-07
+## [0.8.2] - 2026-07-07
+
+### Added
+
+- **Performance benchmarks + a regression gate** (RC). `crates/gize-generator/benches/generation.rs`
+  measures the hot, pure generation paths with criterion (`new_project`, `make_crud`, OpenAPI
+  spec) — on the order of tens of microseconds each. A new `bench` CI job runs them so their
+  numbers show up and they never rot. The actual gate is a coarse, non-flaky budget test
+  (`generation_stays_within_a_generous_time_budget`, in the existing test job): building 1000
+  project + CRUD plans must stay well under a generous ceiling, so a catastrophic slowdown fails
+  CI while runner variance never does.
 
 ### Security
 
