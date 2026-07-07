@@ -91,16 +91,21 @@ validates and matches routes; at least one external plugin builds against the AP
 
 ## Phase 4 — RC (months 12–15)
 
+**Status: In progress (v0.8.x).** Entered at v0.8.0: the 1.0 feature set is **frozen** (new
+frameworks such as Actix move to v2.0) and the project is hardening the existing surface.
+
 **Objective:** Stabilize. Freeze public APIs and generated-code contracts. Harden.
 
 **Dependencies:** Beta complete.
 
 **Features:**
-- API/codegen stability guarantees and a deprecation policy.
-- Upgrade/migration guide between Gize versions (regen-safe templates).
-- Performance benchmarks + regression gates in CI.
-- Security review (auth, generated SQL, admin).
-- Complete docs: Getting Started, Architecture, Cookbook, FAQ, Migration Guide.
+- [x] API/codegen stability guarantees and a deprecation policy — see [`STABILITY.md`](../STABILITY.md).
+- [x] Generated-code contract enforced in CI: apps across every dialect + feature are
+      rustfmt-clean and type-check (ADR-020).
+- [ ] Upgrade/migration guide between Gize versions (regen-safe templates).
+- [ ] Performance benchmarks + regression gates in CI.
+- [ ] Security review (auth, generated SQL, admin).
+- [ ] Complete docs: Getting Started, Architecture, Cookbook, FAQ, Migration Guide.
 
 **Risks:**
 - Backward-compat lock-in too early. → mark unstable surfaces explicitly.
