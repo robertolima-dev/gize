@@ -728,18 +728,149 @@ fn looks_like_email(s: &str) -> bool {
     }
 }
 
-/// `gize serve` — build and run the generated application via `cargo run`.
-pub fn serve() -> Result<()> {
+/// `gize serve` — run the generated application, and (by default, when an admin has been
+/// generated) its admin dev server alongside it (ADR-019). Flags select the mode: `--api-only`,
+/// `--admin-only`, or `--with-admin` (the explicit form of the default).
+pub fn serve(api_only: bool, admin_only: bool, with_admin: bool) -> Result<()> {
     ensure_in_project()?;
-    println!("Starting the application with `cargo run` (Ctrl-C to stop)...\n");
-    let status = std::process::Command::new("cargo")
-        .arg("run")
-        .status()
-        .context("failed to launch `cargo run` — is cargo installed?")?;
-    if !status.success() {
-        bail!("the application exited with a non-zero status");
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    let admin_available = manifest.features.admin && Path::new("admin").is_dir();
+
+    let (run_api, run_admin) =
+        resolve_run_targets(api_only, admin_only, with_admin, admin_available);
+
+    if run_admin && !admin_available {
+        bail!(
+            "no admin to serve — run `gize make admin` first (expected an `admin/` directory \
+             and `features.admin` in gize.toml)"
+        );
     }
-    Ok(())
+
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8080);
+
+    match (run_api, run_admin) {
+        // Admin only: run its dev server in the foreground.
+        (false, true) => {
+            let mut admin = spawn_admin_dev()?;
+            let status = admin.wait().context("waiting for the admin dev server")?;
+            if !status.success() {
+                bail!("the admin dev server exited with a non-zero status");
+            }
+            Ok(())
+        }
+        // API only: the classic path.
+        (true, false) => {
+            println!("Starting the API with `cargo run` (Ctrl-C to stop)...\n");
+            println!("  API:  http://localhost:{port}\n");
+            let status = std::process::Command::new("cargo")
+                .arg("run")
+                .status()
+                .context("failed to launch `cargo run` — is cargo installed?")?;
+            if !status.success() {
+                bail!("the application exited with a non-zero status");
+            }
+            Ok(())
+        }
+        // Both: spawn each and supervise so neither is left orphaned.
+        (true, true) => {
+            println!("Starting the API and the admin dev server (Ctrl-C to stop)...\n");
+            println!("  API:   http://localhost:{port}");
+            println!(
+                "  Admin: http://localhost:5173  (the dev server prints the exact URL below)\n"
+            );
+            let mut api = std::process::Command::new("cargo")
+                .arg("run")
+                .spawn()
+                .context("failed to launch `cargo run` — is cargo installed?")?;
+            let mut admin = match spawn_admin_dev() {
+                Ok(child) => child,
+                Err(e) => {
+                    let _ = api.kill();
+                    let _ = api.wait();
+                    return Err(e);
+                }
+            };
+            supervise(&mut api, &mut admin);
+            Ok(())
+        }
+        (false, false) => unreachable!("run_api is always true unless admin_only"),
+    }
+}
+
+/// Decide what `gize serve` runs, from the flags and whether an admin has been generated.
+/// Returns `(run_api, run_admin)`. With no flag the default runs the admin only when one is
+/// available, so a project without an admin behaves exactly as before.
+fn resolve_run_targets(
+    api_only: bool,
+    admin_only: bool,
+    with_admin: bool,
+    admin_available: bool,
+) -> (bool, bool) {
+    if api_only {
+        (true, false)
+    } else if admin_only {
+        (false, true)
+    } else if with_admin {
+        (true, true)
+    } else {
+        (true, admin_available)
+    }
+}
+
+/// Detect a package manager, install the admin's dependencies on first run, then spawn its dev
+/// server in `admin/`. Streams the dev server's output (inherited stdio).
+fn spawn_admin_dev() -> Result<std::process::Child> {
+    let pm = detect_package_manager().context(
+        "no package manager found on PATH — install pnpm, npm or yarn (the admin needs Node.js)",
+    )?;
+    let admin = Path::new("admin");
+    if !admin.join("node_modules").is_dir() {
+        println!("Installing admin dependencies with `{pm} install` (first run)...");
+        let status = std::process::Command::new(pm)
+            .arg("install")
+            .current_dir(admin)
+            .status()
+            .with_context(|| format!("running `{pm} install` in admin/"))?;
+        if !status.success() {
+            bail!("`{pm} install` failed in admin/");
+        }
+    }
+    println!("Starting the admin dev server with `{pm} run dev` (admin/)...");
+    std::process::Command::new(pm)
+        .arg("run")
+        .arg("dev")
+        .current_dir(admin)
+        .spawn()
+        .with_context(|| format!("launching `{pm} run dev` in admin/"))
+}
+
+/// Prefer pnpm, then npm, then yarn — the first one available on PATH.
+fn detect_package_manager() -> Option<&'static str> {
+    ["pnpm", "npm", "yarn"].into_iter().find(|pm| which(pm))
+}
+
+/// Wait until either child exits, then stop the other so nothing is left orphaned. An
+/// interactive Ctrl-C is delivered by the terminal to the whole foreground process group, so
+/// both children receive it and shut down; this loop then reaps them and, if only one exited on
+/// its own (e.g. a crash), tears down the survivor.
+fn supervise(api: &mut std::process::Child, admin: &mut std::process::Child) {
+    loop {
+        if matches!(api.try_wait(), Ok(Some(_)) | Err(_)) {
+            let _ = admin.kill();
+            let _ = admin.wait();
+            break;
+        }
+        if matches!(admin.try_wait(), Ok(Some(_)) | Err(_)) {
+            let _ = api.kill();
+            let _ = api.wait();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }
 
 /// `gize <name> …` — dispatch an unknown subcommand to a `gize-<name>` plugin on PATH
@@ -810,7 +941,24 @@ fn project_dialect() -> Result<Dialect> {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_email, slugify};
+    use super::{looks_like_email, resolve_run_targets, slugify};
+
+    #[test]
+    fn serve_targets_default_to_admin_only_when_available() {
+        // No flag: API always; admin follows availability.
+        assert_eq!(resolve_run_targets(false, false, false, true), (true, true));
+        assert_eq!(
+            resolve_run_targets(false, false, false, false),
+            (true, false)
+        );
+        // Explicit flags override availability (the guard rejects the impossible case later).
+        assert_eq!(resolve_run_targets(true, false, false, true), (true, false));
+        assert_eq!(
+            resolve_run_targets(false, true, false, false),
+            (false, true)
+        );
+        assert_eq!(resolve_run_targets(false, false, true, false), (true, true));
+    }
 
     #[test]
     fn slugify_handles_pascal_case_and_loose_text() {
