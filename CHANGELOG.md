@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+## [Unreleased]
+
+### Changed
+
+- **Admin UI redesign** (ADR-006). `gize make admin` now generates a polished, Django-inspired
+  admin: a token-based design system with a real **light/dark theme** (toggle, persisted,
+  no-flash), an app shell (header, sidebar, breadcrumbs), and a changelist with search,
+  per-field filters, pagination, bulk selection/delete and typed cells (status pills, formatted
+  dates, and foreign keys resolved to a readable label). Create/edit moved to a slide-over
+  **drawer** with fieldsets, a Django-style action bar (Save · Save and add another · Delete),
+  and **foreign-key `<select>`s** that load the related records. Tailwind was dropped in favor
+  of the self-contained CSS design system. Resource descriptors now carry each field's `ref`
+  (foreign-key target). Verified end-to-end in a real headless browser (login, theme toggle,
+  FK-resolved list, drawer with FK select) and `tsc --strict` + `vite build` clean.
+
 ## [0.7.0] - 2026-07-06 — Beta
 
 The Beta phase (see `docs/roadmap.md`): a generated **Admin UI**, **OpenAPI** docs, a second

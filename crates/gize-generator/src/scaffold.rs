@@ -102,10 +102,17 @@ pub fn admin_shell_plan(manifest: &Manifest) -> Plan {
         .create("admin/.gitignore", gize_admin::gitignore())
         .create("admin/src/main.tsx", gize_admin::main_tsx())
         .create("admin/src/styles.css", gize_admin::styles_css())
+        .create("admin/src/theme.ts", gize_admin::theme_ts())
+        .create("admin/src/icons.tsx", gize_admin::icons_tsx())
+        .create("admin/src/toast.tsx", gize_admin::toast_tsx())
         .create("admin/src/api.ts", gize_admin::api_ts())
         .create("admin/src/auth.tsx", gize_admin::auth_tsx())
         .create("admin/src/App.tsx", gize_admin::app_tsx())
         .create("admin/src/Resource.tsx", gize_admin::resource_tsx())
+        .create(
+            "admin/src/ResourceForm.tsx",
+            gize_admin::resource_form_tsx(),
+        )
 }
 
 /// The code files (no migration) for a module reconstructed from its manifest entry, for
