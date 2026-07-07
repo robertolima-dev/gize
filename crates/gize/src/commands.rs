@@ -626,6 +626,90 @@ pub fn migrate(show_status: bool) -> Result<()> {
     Ok(())
 }
 
+/// `gize createadmin` — create the first admin user in the database (ADR-017). Interactive by
+/// default; `--email`/`--name` + `--password-env` drive it non-interactively for CI. The
+/// password is only ever read from a hidden prompt or an env var, never from argv.
+pub fn create_admin(
+    email: Option<String>,
+    name: Option<String>,
+    password_env: Option<String>,
+) -> Result<()> {
+    ensure_in_project()?;
+    let dialect = project_dialect()?;
+    let database_url = std::env::var("DATABASE_URL").context(
+        "DATABASE_URL must be set — in your environment or a project `.env` \
+         (e.g. postgres://user:pass@localhost:5432/dbname)",
+    )?;
+
+    // Email — from the flag or an interactive prompt — then a light sanity check.
+    let email = match email {
+        Some(e) => e.trim().to_string(),
+        None => prompt("Email: ")?,
+    };
+    if !looks_like_email(&email) {
+        bail!("`{email}` does not look like an email address");
+    }
+
+    // Display name (the `users.name` column).
+    let name = match name {
+        Some(n) => n.trim().to_string(),
+        None => prompt("Name: ")?,
+    };
+    if name.is_empty() {
+        bail!("name must not be empty");
+    }
+
+    // Password: from an env var (CI) or a hidden, confirmed prompt. Never from an argument.
+    let password = match password_env {
+        Some(var) => std::env::var(&var)
+            .with_context(|| format!("reading the password from ${var} (is it set?)"))?,
+        None => {
+            let first = rpassword::prompt_password("Password: ").context("reading password")?;
+            let confirm =
+                rpassword::prompt_password("Confirm password: ").context("reading password")?;
+            if first != confirm {
+                bail!("passwords do not match");
+            }
+            first
+        }
+    };
+    if password.len() < 8 {
+        bail!("password must be at least 8 characters");
+    }
+
+    let hash = crate::password::hash_password(&password)?;
+    gize_db::admin::create(&database_url, dialect, &email, &name, &hash)
+        .context("creating the admin user")?;
+    println!("Created admin `{email}`.");
+    Ok(())
+}
+
+/// Print a label and read one trimmed line from stdin (for interactive prompts).
+fn prompt(label: &str) -> Result<String> {
+    use std::io::Write;
+    print!("{label}");
+    std::io::stdout().flush().ok();
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .context("reading input")?;
+    Ok(line.trim().to_string())
+}
+
+/// A light "is this an email?" check (an `@` with a non-empty local part and a dotted domain).
+/// Deliberately loose — the backend `validator` rules are authoritative; this just catches typos.
+fn looks_like_email(s: &str) -> bool {
+    match s.split_once('@') {
+        Some((local, domain)) => {
+            !local.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
+        }
+        None => false,
+    }
+}
+
 /// `gize serve` — build and run the generated application via `cargo run`.
 pub fn serve() -> Result<()> {
     ensure_in_project()?;
@@ -708,7 +792,7 @@ fn project_dialect() -> Result<Dialect> {
 
 #[cfg(test)]
 mod tests {
-    use super::slugify;
+    use super::{looks_like_email, slugify};
 
     #[test]
     fn slugify_handles_pascal_case_and_loose_text() {
@@ -718,5 +802,16 @@ mod tests {
         assert_eq!(slugify("add-index_to.users"), "add_index_to_users");
         assert_eq!(slugify("migration"), "migration");
         assert_eq!(slugify("!!!"), "");
+    }
+
+    #[test]
+    fn email_check_accepts_plausible_and_rejects_typos() {
+        assert!(looks_like_email("admin@example.com"));
+        assert!(looks_like_email("a.b+tag@sub.example.co"));
+        assert!(!looks_like_email("admin"));
+        assert!(!looks_like_email("admin@localhost"));
+        assert!(!looks_like_email("@example.com"));
+        assert!(!looks_like_email("admin@.com"));
+        assert!(!looks_like_email("admin@example."));
     }
 }
