@@ -2,12 +2,13 @@
 //!
 //! `gize make admin` generates a **separate** Vite + React + TypeScript SPA under `admin/`,
 //! driven by the manifest. The app is data-driven: [`resources_ts`] emits one descriptor
-//! (fields + a Zod schema) per resource from `gize.toml`, and a single generic `Resource`
-//! component renders List/Create/Edit/Delete for any of them. It talks to the backend through
+//! (fields, relationships and a Zod schema) per resource from `gize.toml`, and generic
+//! components render List/Create/Edit/Delete for any of them. It talks to the backend through
 //! a Vite dev proxy (`/api` → the API), so no CORS or backend changes are needed.
 //!
-//! Templates are Rust functions returning file contents (like `gize-templates`); the
-//! generator (`gize-generator`) assembles them into a `Plan`.
+//! The UI is a token-based design system (light + dark theme) with a Django-inspired layout:
+//! an app shell, a changelist with search/filters/pagination/bulk actions, and a slide-over
+//! drawer form. Templates are Rust functions returning file contents.
 
 use gize_core::naming::table_name;
 use gize_core::{FieldType, Manifest};
@@ -33,11 +34,9 @@ pub fn package_json(project: &str) -> String {
     "zod": "^3.23.8"
   }},
   "devDependencies": {{
-    "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.2",
-    "tailwindcss": "^4.0.0",
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
   }}
@@ -46,17 +45,15 @@ pub fn package_json(project: &str) -> String {
     )
 }
 
-/// `admin/vite.config.ts` — React + Tailwind, and a dev proxy so `/api/*` reaches the backend
-/// (avoids CORS in development; ADR-006).
+/// `admin/vite.config.ts` — React, and a dev proxy so `/api/*` reaches the backend.
 pub fn vite_config() -> String {
     r#"import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 
 // The API base is proxied so the browser talks same-origin in dev. Set VITE_API_URL to point
 // at your running Gize backend (default http://localhost:8080).
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react()],
   server: {
     proxy: {
       "/api": {
@@ -97,22 +94,28 @@ pub fn tsconfig() -> String {
     .to_string()
 }
 
-/// `admin/index.html`.
+/// `admin/index.html`. Sets the theme before first paint to avoid a flash.
 pub fn index_html() -> String {
-    r#"<!doctype html>
+    r####"<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin</title>
+    <script>
+      try {
+        var t = localStorage.getItem("gize-admin-theme");
+        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-"#
-    .to_string()
+"####
+        .to_string()
 }
 
 /// `admin/.env.example`.
@@ -126,9 +129,9 @@ pub fn gitignore() -> String {
     "node_modules\ndist\n.env\n".to_string()
 }
 
-/// `admin/src/styles.css` — Tailwind v4 entry.
+/// `admin/src/styles.css` — the token-based design system (light + dark).
 pub fn styles_css() -> String {
-    "@import \"tailwindcss\";\n".to_string()
+    include_str!("assets/styles.css").to_string()
 }
 
 /// `admin/src/main.tsx`.
@@ -143,6 +146,82 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </React.StrictMode>,
 );
+"#
+    .to_string()
+}
+
+/// `admin/src/theme.ts` — light/dark theme helpers (persisted, system-aware).
+pub fn theme_ts() -> String {
+    r#"export type Theme = "light" | "dark";
+
+export function currentTheme(): Theme {
+  const stored = safeGet();
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+export function setTheme(theme: Theme): void {
+  document.documentElement.setAttribute("data-theme", theme);
+  try {
+    localStorage.setItem("gize-admin-theme", theme);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function toggleTheme(): Theme {
+  const next: Theme = currentTheme() === "dark" ? "light" : "dark";
+  setTheme(next);
+  return next;
+}
+
+function safeGet(): string | null {
+  try {
+    return localStorage.getItem("gize-admin-theme");
+  } catch {
+    return null;
+  }
+}
+"#
+    .to_string()
+}
+
+/// `admin/src/icons.tsx` — a small inline SVG icon set.
+pub fn icons_tsx() -> String {
+    include_str!("assets/icons.tsx").to_string()
+}
+
+/// `admin/src/toast.tsx` — a lightweight toast (event-based, no context wiring).
+pub fn toast_tsx() -> String {
+    r#"import { useEffect, useState } from "react";
+import { Icon } from "./icons";
+
+export function toast(message: string): void {
+  window.dispatchEvent(new CustomEvent("gize-toast", { detail: message }));
+}
+
+export function ToastHost() {
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    let timer: number | undefined;
+    function onToast(e: Event) {
+      setMsg((e as CustomEvent<string>).detail);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setMsg(null), 2400);
+    }
+    window.addEventListener("gize-toast", onToast);
+    return () => {
+      window.removeEventListener("gize-toast", onToast);
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return (
+    <div className={"toast" + (msg ? " show" : "")} role="status" aria-live="polite">
+      <Icon name="check" className="ok" />
+      <span>{msg}</span>
+    </div>
+  );
+}
 "#
     .to_string()
 }
@@ -172,7 +251,7 @@ async function req(path: string, opts: RequestInit = {}): Promise<any> {
 }
 
 export const api = {
-  list: (path: string) => req(`/${path}`),
+  list: (path: string): Promise<any[]> => req(`/${path}`),
   get: (path: string, id: string) => req(`/${path}/${id}`),
   create: (path: string, body: unknown) =>
     req(`/${path}`, { method: "POST", body: JSON.stringify(body) }),
@@ -182,298 +261,50 @@ export const api = {
   login: (email: string, password: string) =>
     req(`/users/login`, { method: "POST", body: JSON.stringify({ email, password }) }),
 };
+
+/** A resource's display label: the (plural) path, capitalized — e.g. "posts" -> "Posts". */
+export function titleCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** A readable label for a related record (used by foreign-key selects and cells). */
+export function labelOf(row: Record<string, any>): string {
+  for (const key of ["name", "title", "email", "slug"]) {
+    if (row[key]) return String(row[key]);
+  }
+  for (const key of Object.keys(row)) {
+    const value = row[key];
+    if (typeof value === "string" && key !== "id" && !key.endsWith("_at")) return value;
+  }
+  return String(row.id ?? "");
+}
 "#
     .to_string()
 }
 
-/// `admin/src/auth.tsx` — token storage hook and a login screen.
+/// `admin/src/auth.tsx` — token storage hook and the branded login screen.
 pub fn auth_tsx() -> String {
-    r#"import { useState } from "react";
-import { api } from "./api";
-
-export function useAuth() {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("gize_token"));
-  function login(t: string) {
-    localStorage.setItem("gize_token", t);
-    setToken(t);
-  }
-  function logout() {
-    localStorage.removeItem("gize_token");
-    setToken(null);
-  }
-  return { token, login, logout };
+    include_str!("assets/auth.tsx").to_string()
 }
 
-export function Login({ onLogin }: { onLogin: (token: string) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    try {
-      const res = await api.login(email, password);
-      onLogin(res.token);
-    } catch {
-      setError("Invalid credentials");
-    }
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form onSubmit={submit} className="bg-white p-8 rounded-lg shadow w-80 space-y-4">
-        <h1 className="text-xl font-bold">Sign in</h1>
-        <input
-          className="w-full border rounded px-3 py-2"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="w-full bg-black text-white rounded py-2" type="submit">
-          Sign in
-        </button>
-      </form>
-    </div>
-  );
-}
-"#
-    .to_string()
-}
-
-/// `admin/src/App.tsx` — the shell: auth gate, a sidebar of resources, and the active screen.
+/// `admin/src/App.tsx` — the app shell (topbar, sidebar, drawer, toasts, theme toggle).
 pub fn app_tsx() -> String {
-    r#"import { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { resources } from "./resources";
-import { Resource } from "./Resource";
-import { Login, useAuth } from "./auth";
-
-const client = new QueryClient();
-
-export default function App() {
-  const auth = useAuth();
-  const [active, setActive] = useState(resources[0]?.path ?? "");
-
-  if (!auth.token) return <Login onLogin={auth.login} />;
-
-  const current = resources.find((r) => r.path === active) ?? resources[0];
-
-  return (
-    <QueryClientProvider client={client}>
-      <div className="min-h-screen flex bg-gray-50 text-gray-900">
-        <aside className="w-56 bg-white border-r p-4 flex flex-col gap-1">
-          <div className="font-bold mb-3">Admin</div>
-          {resources.map((r) => (
-            <button
-              key={r.path}
-              onClick={() => setActive(r.path)}
-              className={`text-left px-3 py-2 rounded ${
-                current && r.path === current.path ? "bg-gray-900 text-white" : "hover:bg-gray-100"
-              }`}
-            >
-              {r.name}
-            </button>
-          ))}
-          <button onClick={auth.logout} className="mt-auto text-sm text-gray-500 px-3 py-2">
-            Sign out
-          </button>
-        </aside>
-        <main className="flex-1 p-8">
-          {current && <Resource key={current.path} desc={current} />}
-        </main>
-      </div>
-    </QueryClientProvider>
-  );
-}
-"#
-    .to_string()
+    include_str!("assets/App.tsx").to_string()
 }
 
-/// `admin/src/Resource.tsx` — the generic CRUD screen (list + search + pagination + a form for
-/// create/edit + delete), driven by a resource descriptor.
+/// `admin/src/Resource.tsx` — the changelist (search, filters, pagination, bulk actions).
 pub fn resource_tsx() -> String {
-    r#"import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { api } from "./api";
-import type { ResourceDesc } from "./resources";
-
-type Row = Record<string, any>;
-
-export function Resource({ desc }: { desc: ResourceDesc }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Row | null>(null);
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
-  const pageSize = 10;
-
-  const list = useQuery<Row[]>({ queryKey: [desc.path], queryFn: () => api.list(desc.path) });
-  const form = useForm<Row>({ resolver: zodResolver(desc.createSchema) as any });
-
-  const save = useMutation({
-    mutationFn: (values: Row) =>
-      editing ? api.update(desc.path, editing.id, values) : api.create(desc.path, values),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [desc.path] });
-      form.reset({});
-      setEditing(null);
-    },
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => api.remove(desc.path, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: [desc.path] }),
-  });
-
-  const items = list.data ?? [];
-  const filtered = items.filter((it) =>
-    JSON.stringify(it).toLowerCase().includes(search.toLowerCase()),
-  );
-  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const shown = filtered.slice(page * pageSize, page * pageSize + pageSize);
-  const columns = desc.fields.filter((f) => f.kind !== "password");
-
-  function startEdit(item: Row) {
-    setEditing(item);
-    const values: Row = {};
-    for (const f of desc.fields) values[f.name] = item[f.name] ?? "";
-    form.reset(values);
-  }
-  function startCreate() {
-    setEditing(null);
-    form.reset({});
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-bold">{desc.name}</h1>
-        <input
-          className="border rounded px-3 py-1 ml-auto"
-          placeholder="Search"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-        />
-        <button className="bg-gray-900 text-white rounded px-3 py-1" onClick={startCreate}>
-          New
-        </button>
-      </div>
-
-      <form
-        onSubmit={form.handleSubmit((v) => save.mutate(v))}
-        className="bg-white rounded-lg shadow p-4 grid grid-cols-2 gap-3"
-        data-testid="resource-form"
-      >
-        <div className="col-span-2 font-semibold">{editing ? "Edit" : "Create"}</div>
-        {desc.fields.map((f) => (
-          <label key={f.name} className="text-sm flex flex-col gap-1">
-            {f.name}
-            {f.kind === "boolean" ? (
-              <input type="checkbox" {...form.register(f.name)} />
-            ) : (
-              <input
-                className="border rounded px-2 py-1"
-                type={f.kind === "number" ? "number" : f.kind === "password" ? "password" : "text"}
-                {...form.register(f.name)}
-              />
-            )}
-            {form.formState.errors[f.name] && (
-              <span className="text-red-600 text-xs">
-                {String(form.formState.errors[f.name]?.message ?? "invalid")}
-              </span>
-            )}
-          </label>
-        ))}
-        <div className="col-span-2 flex gap-2">
-          <button className="bg-black text-white rounded px-4 py-1" type="submit">
-            {editing ? "Save" : "Create"}
-          </button>
-          {editing && (
-            <button type="button" className="px-4 py-1" onClick={startCreate}>
-              Cancel
-            </button>
-          )}
-          {save.isError && (
-            <span className="text-red-600 text-sm self-center">{String(save.error)}</span>
-          )}
-        </div>
-      </form>
-
-      <div className="bg-white rounded-lg shadow overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100 text-left">
-            <tr>
-              {columns.map((c) => (
-                <th key={c.name} className="px-3 py-2">
-                  {c.name}
-                </th>
-              ))}
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((item) => (
-              <tr key={item.id} className="border-t" data-testid="row">
-                {columns.map((c) => (
-                  <td key={c.name} className="px-3 py-2">
-                    {String(item[c.name] ?? "")}
-                  </td>
-                ))}
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button className="text-blue-600 mr-3" onClick={() => startEdit(item)}>
-                    Edit
-                  </button>
-                  <button className="text-red-600" onClick={() => remove.mutate(item.id)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex items-center gap-3 text-sm">
-        <button
-          disabled={page === 0}
-          onClick={() => setPage(page - 1)}
-          className="px-2 py-1 border rounded disabled:opacity-40"
-        >
-          Prev
-        </button>
-        <span>
-          Page {page + 1} / {pages}
-        </span>
-        <button
-          disabled={page + 1 >= pages}
-          onClick={() => setPage(page + 1)}
-          className="px-2 py-1 border rounded disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
+    include_str!("assets/Resource.tsx").to_string()
 }
-"#
-    .to_string()
+
+/// `admin/src/ResourceForm.tsx` — the drawer form (fieldsets, typed inputs, FK selects).
+pub fn resource_form_tsx() -> String {
+    include_str!("assets/ResourceForm.tsx").to_string()
 }
 
 /// `admin/src/resources.ts` — the descriptors generated from the manifest (ADR-006): one entry
-/// per resource with its editable fields and a Zod schema mirroring the backend validation.
+/// per resource with its editable fields (each field carrying its kind, and a `ref` target for
+/// foreign keys) and a Zod schema mirroring the backend validation.
 pub fn resources_ts(manifest: &Manifest) -> anyhow::Result<String> {
     let mut entries = String::new();
     for module in &manifest.modules {
@@ -484,8 +315,18 @@ pub fn resources_ts(manifest: &Manifest) -> anyhow::Result<String> {
         let mut schema_ts = String::new();
         for f in &model.fields {
             let kind = field_kind(&f.name, f.ty);
+            // A synthetic `<name>_id` foreign-key column references `belongs_to` target's table.
+            let ref_target = model
+                .relations
+                .iter()
+                .find(|r| r.fk_column() == f.name)
+                .map(|r| r.target.clone());
+            let ref_ts = match &ref_target {
+                Some(t) => format!(", ref: \"{t}\""),
+                None => String::new(),
+            };
             fields_ts.push_str(&format!(
-                "      {{ name: \"{}\", kind: \"{kind}\" }},\n",
+                "      {{ name: \"{}\", kind: \"{kind}\"{ref_ts} }},\n",
                 f.name
             ));
             schema_ts.push_str(&format!("      {}: {},\n", f.name, zod_for(kind)));
@@ -512,6 +353,8 @@ export type FieldKind =
 export interface FieldDesc {{
   name: string;
   kind: FieldKind;
+  /** For a foreign key: the target resource path (e.g. "users"). */
+  ref?: string;
 }}
 
 export interface ResourceDesc {{
@@ -589,12 +432,11 @@ mod tests {
         let ts = resources_ts(&manifest()).unwrap();
         assert!(ts.contains("path: \"users\""));
         assert!(ts.contains("path: \"posts\""));
-        // email/password get the specialized kinds + Zod rules.
         assert!(ts.contains("{ name: \"email\", kind: \"email\" }"));
         assert!(ts.contains("email: z.string().email()"));
         assert!(ts.contains("password: z.string().min(8)"));
-        // the FK column is present as a uuid field.
-        assert!(ts.contains("{ name: \"author_id\", kind: \"uuid\" }"));
+        // the FK column is a uuid field carrying its ref target.
+        assert!(ts.contains("{ name: \"author_id\", kind: \"uuid\", ref: \"users\" }"));
     }
 
     #[test]
