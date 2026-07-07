@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use gize_core::{Dialect, ModelSpec};
+use gize_core::{Api, Dialect, ModelSpec};
 use gize_generator::{Options, Plan, Report, Writer, scaffold};
 
 /// Fixed, injected timestamp so migration filenames and contents are deterministic.
@@ -59,7 +59,7 @@ fn new_project_materializes_expected_tree_on_disk() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
 
@@ -94,7 +94,7 @@ fn new_project_materializes_expected_tree_on_disk() {
 #[test]
 fn regenerating_is_idempotent_and_preserves_hand_edits() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, TS);
+    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS);
     apply(&root, &plan, Options::default());
 
     // Simulate a developer editing a generated file.
@@ -125,7 +125,7 @@ fn regenerating_is_idempotent_and_preserves_hand_edits() {
 #[test]
 fn force_overwrites_and_dry_run_writes_nothing() {
     let root = unique_tmpdir();
-    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, TS);
+    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS);
     apply(&root, &plan, Options::default());
 
     let sentinel = root.join("Cargo.toml");
@@ -164,11 +164,53 @@ fn force_overwrites_and_dry_run_writes_nothing() {
 }
 
 #[test]
+fn api_versioning_nests_routes_and_records_the_prefix() {
+    // A versioned project nests the app under `/api/v1` and records it in gize.toml (ADR-016).
+    let versioned = unique_tmpdir();
+    apply(
+        &versioned,
+        &scaffold::new_project(
+            "shop",
+            true,
+            false,
+            Dialect::Postgres,
+            Some(Api::from_version("1")),
+            TS,
+        ),
+        Options::default(),
+    );
+    let router = fs::read_to_string(versioned.join("src/router.rs")).unwrap();
+    assert!(
+        router.contains(".nest(\"/api/v1\", app::routes())"),
+        "versioned router should nest under the prefix: {router}"
+    );
+    let manifest = fs::read_to_string(versioned.join("gize.toml")).unwrap();
+    assert!(manifest.contains("[api]"));
+    assert!(manifest.contains("version = \"v1\""));
+
+    // An unversioned project is unchanged: it merges at the root and writes no `[api]` table.
+    let plain = unique_tmpdir();
+    apply(
+        &plain,
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
+        Options::default(),
+    );
+    let router = fs::read_to_string(plain.join("src/router.rs")).unwrap();
+    assert!(router.contains(".merge(app::routes())"));
+    assert!(!router.contains(".nest("));
+    assert!(
+        !fs::read_to_string(plain.join("gize.toml"))
+            .unwrap()
+            .contains("[api]")
+    );
+}
+
+#[test]
 fn make_crud_lands_resource_with_declared_fields() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", false, false, Dialect::Postgres, TS),
+        &scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
     apply(
@@ -231,7 +273,7 @@ fn content<'a>(plan: &'a Plan, rel: &str) -> &'a str {
 #[test]
 fn project_skeleton_matches_snapshots() {
     // No built-in users here, so the skeleton templates are isolated from the CRUD ones.
-    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, TS);
+    let plan = scaffold::new_project("shop", false, false, Dialect::Postgres, None, TS);
     for rel in [
         "Cargo.toml",
         "gize.toml",
@@ -291,7 +333,7 @@ fn sync_rebuilds_a_deleted_module_from_the_manifest() {
     // A project with the built-in users plus a Product CRUD, both recorded in gize.toml.
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
     apply(
@@ -329,7 +371,7 @@ fn sync_reports_drift_and_preserves_hand_edits_without_force() {
     let root = unique_tmpdir();
     apply(
         &root,
-        &scaffold::new_project("shop", true, false, Dialect::Postgres, TS),
+        &scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS),
         Options::default(),
     );
 
@@ -380,7 +422,7 @@ fn record_products_in_manifest(root: &Path) {
 fn auth_and_users_slice_match_snapshots() {
     // The security-sensitive generated code (auth module + the users slice that hashes
     // passwords and issues tokens) is pinned so template edits are always reviewed.
-    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, TS);
+    let plan = scaffold::new_project("shop", true, false, Dialect::Postgres, None, TS);
     for rel in [
         "src/auth/mod.rs",
         "src/app/users/handler.rs",

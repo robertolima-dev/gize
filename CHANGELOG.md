@@ -8,7 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.1] - 2026-07-07
+## [0.7.2] - 2026-07-07
+
+### Added
+
+- **API route versioning** (ADR-016). `gize new --api-version 1` (or `v1`) mounts every CRUD
+  route under a versioned prefix — `/api/v1/products` instead of `/products` — and records it
+  in `gize.toml` under a new optional `[api]` table (`version`, `prefix`). The OpenAPI
+  document, when enabled, prefixes its paths with the same mount so the spec stays aligned
+  with the router by construction. Versioning is per project (a single, predictable prefix for
+  the whole surface); a per-resource override is deliberately deferred. Without `--api-version`
+  nothing changes: no `[api]` table is written and the router output is byte-identical to
+  before, so existing projects are unaffected.
 
 ### Changed
 

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use gize_core::naming::{snake_case, table_name};
-use gize_core::{Dialect, Manifest, ModelSpec, Module};
+use gize_core::{Api, Dialect, Manifest, ModelSpec, Module};
 use gize_generator::{Options, Plan, Writer, diff, registry, scaffold, sync};
 
 use crate::cli::GenFlags;
@@ -45,6 +45,7 @@ pub fn new_project(
     no_user: bool,
     openapi: bool,
     database: &str,
+    api_version: Option<&str>,
     flags: GenFlags,
 ) -> Result<()> {
     let root = Path::new(name);
@@ -53,7 +54,15 @@ pub fn new_project(
     }
 
     let dialect = Dialect::from_database(database);
-    let plan = scaffold::new_project(name, !no_user, openapi, dialect, &migration_timestamp());
+    let api = api_version.map(Api::from_version);
+    let plan = scaffold::new_project(
+        name,
+        !no_user,
+        openapi,
+        dialect,
+        api,
+        &migration_timestamp(),
+    );
     let report = Writer::new(flags.into())
         .apply(root, &plan)
         .with_context(|| format!("scaffolding project `{name}`"))?;

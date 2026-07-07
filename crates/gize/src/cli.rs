@@ -40,6 +40,10 @@ pub enum Command {
         /// Target database: `postgres` (default) or `sqlite` (ADR-015).
         #[arg(long, default_value = "postgres")]
         database: String,
+        /// Mount CRUD routes under a versioned API prefix, e.g. `--api-version 1` (or `v1`)
+        /// serves them at `/api/v1/...`. Omit for root-mounted routes (ADR-016).
+        #[arg(long)]
+        api_version: Option<String>,
         #[command(flatten)]
         flags: GenFlags,
     },

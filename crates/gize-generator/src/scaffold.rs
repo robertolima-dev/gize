@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use gize_core::naming::table_name;
-use gize_core::{Dialect, Manifest, ModelSpec, Module};
+use gize_core::{Api, Dialect, Manifest, ModelSpec, Module};
 use gize_templates::{auth, crud, model, module, openapi, project, user};
 
 use crate::plan::Plan;
@@ -146,6 +146,7 @@ pub fn new_project(
     with_user: bool,
     with_openapi: bool,
     dialect: Dialect,
+    api: Option<Api>,
     timestamp: &str,
 ) -> Plan {
     let mut manifest = Manifest::new(name);
@@ -153,6 +154,9 @@ pub fn new_project(
     // and write routes are guarded, so the manifest reflects it.
     manifest.features.authentication = true;
     manifest.features.openapi = with_openapi;
+    // Record the API version prefix, if any, so the router nests routes under it and
+    // `gize sync` keeps the same mount (ADR-016).
+    manifest.api = api;
     // Record the chosen database so `gize sync` regenerates against the same dialect (ADR-015).
     manifest.stack.database = match dialect {
         Dialect::Postgres => "postgres".to_string(),
@@ -186,7 +190,10 @@ pub fn new_project(
         .create(".gitignore", "/target\n.env\n")
         .create("src/main.rs", project::main_rs())
         .create("src/state.rs", project::state_rs(dialect))
-        .create("src/router.rs", project::router_rs())
+        .create(
+            "src/router.rs",
+            project::router_rs(manifest.api.as_ref().map(Api::mount_path).as_deref()),
+        )
         .create("src/config/mod.rs", project::config_mod_rs())
         .create("src/auth/mod.rs", auth::mod_rs())
         .create("src/app/mod.rs", app_mod)
@@ -302,7 +309,14 @@ mod tests {
 
     #[test]
     fn new_project_plan_includes_core_files() {
-        let plan = new_project("shop", false, false, Dialect::Postgres, "20260704120000");
+        let plan = new_project(
+            "shop",
+            false,
+            false,
+            Dialect::Postgres,
+            None,
+            "20260704120000",
+        );
         let paths = paths_of(&plan);
         assert!(paths.contains(&"Cargo.toml".to_string()));
         assert!(paths.contains(&"gize.toml".to_string()));
@@ -312,7 +326,14 @@ mod tests {
 
     #[test]
     fn new_project_without_user_omits_users_slice() {
-        let plan = new_project("shop", false, false, Dialect::Postgres, "20260704120000");
+        let plan = new_project(
+            "shop",
+            false,
+            false,
+            Dialect::Postgres,
+            None,
+            "20260704120000",
+        );
         let paths = paths_of(&plan);
         assert!(!paths.iter().any(|p| p.starts_with("src/app/users/")));
         assert!(!paths.iter().any(|p| p.ends_with("_create_users.sql")));
@@ -323,7 +344,14 @@ mod tests {
 
     #[test]
     fn new_project_scaffolds_and_wires_users_by_default() {
-        let plan = new_project("shop", true, false, Dialect::Postgres, "20260704120000");
+        let plan = new_project(
+            "shop",
+            true,
+            false,
+            Dialect::Postgres,
+            None,
+            "20260704120000",
+        );
         let paths = paths_of(&plan);
         for file in ["mod.rs", "model.rs", "dto.rs", "repository.rs", "routes.rs"] {
             assert!(
@@ -388,7 +416,14 @@ mod tests {
 
     #[test]
     fn new_project_with_openapi_includes_spec_and_module() {
-        let plan = new_project("blog", true, true, Dialect::Postgres, "20260704120000");
+        let plan = new_project(
+            "blog",
+            true,
+            true,
+            Dialect::Postgres,
+            None,
+            "20260704120000",
+        );
         let paths: Vec<_> = plan
             .ops
             .iter()
@@ -416,7 +451,14 @@ mod tests {
 
     #[test]
     fn new_project_without_openapi_omits_it() {
-        let plan = new_project("blog", true, false, Dialect::Postgres, "20260704120000");
+        let plan = new_project(
+            "blog",
+            true,
+            false,
+            Dialect::Postgres,
+            None,
+            "20260704120000",
+        );
         let paths: Vec<_> = plan
             .ops
             .iter()

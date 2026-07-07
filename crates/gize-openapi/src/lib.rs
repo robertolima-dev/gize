@@ -7,30 +7,44 @@
 
 use anyhow::Result;
 use gize_core::naming::table_name;
-use gize_core::{FieldType, Manifest, ModelSpec};
+use gize_core::{Api, FieldType, Manifest, ModelSpec};
 use serde_json::{Value, json};
 
 /// The set of `(method, path)` operations Gize generates for a module. Used both to build the
 /// spec and by the parity test that checks the spec against the router.
 pub fn operations(manifest: &Manifest) -> Result<Vec<(String, String)>> {
+    // A versioned project (ADR-016) serves every route under `/api/v1`, so the spec's paths
+    // carry the same prefix and stay aligned with the router by construction.
+    let prefix = api_prefix(manifest);
     let mut ops = Vec::new();
     for module in &manifest.modules {
         let table = &module.name;
-        ops.push(("get".into(), format!("/{table}")));
-        ops.push(("post".into(), format!("/{table}")));
-        ops.push(("get".into(), format!("/{table}/{{id}}")));
-        ops.push(("put".into(), format!("/{table}/{{id}}")));
-        ops.push(("delete".into(), format!("/{table}/{{id}}")));
+        ops.push(("get".into(), format!("{prefix}/{table}")));
+        ops.push(("post".into(), format!("{prefix}/{table}")));
+        ops.push(("get".into(), format!("{prefix}/{table}/{{id}}")));
+        ops.push(("put".into(), format!("{prefix}/{table}/{{id}}")));
+        ops.push(("delete".into(), format!("{prefix}/{table}/{{id}}")));
         if table == "users" {
-            ops.push(("post".into(), "/users/register".into()));
-            ops.push(("post".into(), "/users/login".into()));
+            ops.push(("post".into(), format!("{prefix}/users/register")));
+            ops.push(("post".into(), format!("{prefix}/users/login")));
         }
     }
     Ok(ops)
 }
 
+/// The API route prefix a versioned project mounts under (e.g. `/api/v1`), or empty when the
+/// project is unversioned (ADR-016).
+fn api_prefix(manifest: &Manifest) -> String {
+    manifest
+        .api
+        .as_ref()
+        .map(Api::mount_path)
+        .unwrap_or_default()
+}
+
 /// Render the full OpenAPI document for a project from its manifest.
 pub fn spec_json(manifest: &Manifest) -> Result<Value> {
+    let prefix = api_prefix(manifest);
     let mut paths = serde_json::Map::new();
     let mut schemas = serde_json::Map::new();
 
@@ -46,14 +60,14 @@ pub fn spec_json(manifest: &Manifest) -> Result<Value> {
         schemas.insert(format!("Create{name}"), dto_schema(&model));
         schemas.insert(format!("Update{name}"), dto_schema(&model));
 
-        paths.insert(format!("/{table}"), collection_path(&table, name));
-        paths.insert(format!("/{table}/{{id}}"), item_path(&table, name));
+        paths.insert(format!("{prefix}/{table}"), collection_path(&table, name));
+        paths.insert(format!("{prefix}/{table}/{{id}}"), item_path(&table, name));
 
         if table == "users" {
             schemas.insert("LoginRequest".into(), login_request_schema());
             schemas.insert("TokenResponse".into(), token_response_schema());
-            paths.insert("/users/register".into(), register_path());
-            paths.insert("/users/login".into(), login_path());
+            paths.insert(format!("{prefix}/users/register"), register_path());
+            paths.insert(format!("{prefix}/users/login"), login_path());
         }
     }
 

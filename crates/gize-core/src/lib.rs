@@ -11,4 +11,4 @@ pub mod naming;
 
 pub use dialect::Dialect;
 pub use field::{Field, FieldType, ModelSpec, Relation};
-pub use manifest::{Manifest, Module};
+pub use manifest::{Api, Manifest, Module};

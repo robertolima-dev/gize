@@ -22,6 +22,10 @@ pub struct Manifest {
     pub stack: Stack,
     #[serde(default)]
     pub features: Features,
+    /// Optional API route versioning (ADR-016). Absent for unversioned projects, so their
+    /// `gize.toml` stays clean and their router output is byte-identical to before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api: Option<Api>,
     /// Modules that make up the app, in the rich `[[module]]` form. Kept sorted by name for
     /// deterministic output. Skipped when empty so a bare project has a clean manifest.
     #[serde(default, rename = "module", skip_serializing_if = "Vec::is_empty")]
@@ -48,6 +52,36 @@ impl Default for Stack {
             database: "postgres".to_string(),
             orm: "sqlx".to_string(),
         }
+    }
+}
+
+/// API route versioning for the project (ADR-016). Its presence turns root-mounted CRUD
+/// routes (`/products`) into versioned ones (`/api/v1/products`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Api {
+    /// The normalized version segment, e.g. `v1`.
+    pub version: String,
+    /// The prefix the versioned API is mounted under (default `/api`).
+    pub prefix: String,
+}
+
+impl Api {
+    /// The default prefix a versioned API mounts under.
+    pub const DEFAULT_PREFIX: &'static str = "/api";
+
+    /// Build from a raw `--api-version` value, normalizing `1` and `v1` both to `v1`.
+    pub fn from_version(raw: &str) -> Self {
+        let raw = raw.trim();
+        let digits = raw.strip_prefix(['v', 'V']).unwrap_or(raw);
+        Self {
+            version: format!("v{digits}"),
+            prefix: Self::DEFAULT_PREFIX.to_string(),
+        }
+    }
+
+    /// The full mount path the app is nested under, e.g. `/api/v1`.
+    pub fn mount_path(&self) -> String {
+        format!("{}/{}", self.prefix.trim_end_matches('/'), self.version)
     }
 }
 
@@ -117,6 +151,8 @@ struct RawManifest {
     stack: Stack,
     #[serde(default)]
     features: Features,
+    #[serde(default)]
+    api: Option<Api>,
     #[serde(default, rename = "module")]
     module: Vec<Module>,
     #[serde(default)]
@@ -132,6 +168,7 @@ impl Manifest {
             },
             stack: Stack::default(),
             features: Features::default(),
+            api: None,
             modules: Vec::new(),
         }
     }
@@ -151,6 +188,7 @@ impl Manifest {
             project: raw.project,
             stack: raw.stack,
             features: raw.features,
+            api: raw.api,
             modules,
         })
     }
@@ -379,6 +417,31 @@ mod tests {
             }],
         });
         assert!(m.modules_in_dependency_order().is_err());
+    }
+
+    #[test]
+    fn api_version_normalizes_and_builds_mount_path() {
+        // Both `1` and `v1` normalize to the same `v1` segment.
+        assert_eq!(Api::from_version("1").version, "v1");
+        assert_eq!(Api::from_version("v1").version, "v1");
+        assert_eq!(Api::from_version("V2").version, "v2");
+        assert_eq!(Api::from_version(" 3 ").version, "v3");
+        assert_eq!(Api::from_version("1").mount_path(), "/api/v1");
+    }
+
+    #[test]
+    fn api_section_roundtrips_and_is_omitted_when_absent() {
+        // Present: the `[api]` table survives a round-trip.
+        let mut m = Manifest::new("shop");
+        m.api = Some(Api::from_version("1"));
+        let text = m.to_toml().unwrap();
+        assert!(text.contains("[api]"));
+        assert!(text.contains("version = \"v1\""));
+        assert_eq!(m, Manifest::from_toml(&text).unwrap());
+
+        // Absent: no `[api]` table is written, keeping unversioned manifests clean.
+        let bare = Manifest::new("shop");
+        assert!(!bare.to_toml().unwrap().contains("[api]"));
     }
 
     #[test]
