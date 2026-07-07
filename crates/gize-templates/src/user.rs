@@ -159,7 +159,15 @@ impl IntoResponse for Error {
             ),
             Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Error::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string()),
-            Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+            Error::Database(error) => {
+                // Log the detail server-side; never return a raw database error to the client
+                // (it can leak schema, SQL or connection internals).
+                tracing::error!(error = %error, "database error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal server error".to_string(),
+                )
+            }
         };
         (status, message).into_response()
     }
@@ -257,13 +265,31 @@ pub async fn login(
     let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = __P1__")
         .bind(&input.email)
         .fetch_optional(&state.db)
-        .await?
-        .ok_or(Error::Unauthorized)?;
-    if !verify_password(&input.password, &user.password) {
-        return Err(Error::Unauthorized);
+        .await?;
+    // Verify a password whether or not the email exists, so the response time does not reveal
+    // which accounts are registered (user enumeration). An unknown email is checked against a
+    // throwaway hash so it costs the same as a real verification.
+    let authenticated = match &user {
+        Some(user) => verify_password(&input.password, &user.password),
+        None => {
+            let _ = verify_password(&input.password, dummy_password_hash());
+            false
+        }
+    };
+    match (authenticated, user) {
+        (true, Some(user)) => {
+            let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+            Ok(Json(TokenResponse { token }))
+        }
+        _ => Err(Error::Unauthorized),
     }
-    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
-    Ok(Json(TokenResponse { token }))
+}
+
+/// A valid Argon2 hash of a throwaway password, computed once. Used to equalize login timing for
+/// unknown emails (see `login`), so an attacker cannot enumerate accounts by response time.
+fn dummy_password_hash() -> &'static str {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| hash_password("gize-timing-equalizer").unwrap_or_default())
 }
 "#
     .replace("__P1__", &dialect.placeholder(1))
