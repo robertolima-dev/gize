@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-07
+
 ### Changed
 
 - **Admin UI redesign** (ADR-006). `gize make admin` now generates a polished, Django-inspired
