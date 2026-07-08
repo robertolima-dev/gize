@@ -71,7 +71,8 @@ pub async fn register(
         ..input
     };
     let user = service::create(&state.db, &stored).await?;
-    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    // A freshly registered user is never an admin (see `is_admin = false` above).
+    let token = issue_token(&user.id, false).map_err(|_| Error::Internal)?;
     Ok((StatusCode::CREATED, Json(TokenResponse { token })))
 }
 
@@ -97,7 +98,7 @@ pub async fn login(
     };
     match (authenticated, user) {
         (true, Some(user)) => {
-            let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+            let token = issue_token(&user.id, user.is_admin).map_err(|_| Error::Internal)?;
             Ok(Json(TokenResponse { token }))
         }
         _ => Err(Error::Unauthorized),

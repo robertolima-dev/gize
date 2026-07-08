@@ -252,7 +252,8 @@ pub async fn register(
         ..input
     };
     let user = service::create(&state.db, &stored).await?;
-    let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+    // A freshly registered user is never an admin (see `is_admin = false` above).
+    let token = issue_token(&user.id, false).map_err(|_| Error::Internal)?;
     Ok((StatusCode::CREATED, Json(TokenResponse { token })))
 }
 
@@ -278,7 +279,7 @@ pub async fn login(
     };
     match (authenticated, user) {
         (true, Some(user)) => {
-            let token = issue_token(&user.id).map_err(|_| Error::Internal)?;
+            let token = issue_token(&user.id, user.is_admin).map_err(|_| Error::Internal)?;
             Ok(Json(TokenResponse { token }))
         }
         _ => Err(Error::Unauthorized),
@@ -295,31 +296,38 @@ fn dummy_password_hash() -> &'static str {
     .replace("__P1__", &dialect.placeholder(1))
 }
 
-/// `routes.rs` for users: public register/login and reads, with the write routes guarded by
-/// the auth middleware (ADR-013).
+/// `routes.rs` for users: public register/login; every other route — including reads — is
+/// admin-gated (ADR-021). The identity resource is hardened by default so it neither leaks
+/// emails/enumeration through public reads nor lets any authenticated user manage other users.
 pub fn routes_rs() -> String {
-    r#"use axum::routing::{get, post, put};
+    r#"use axum::routing::{get, post};
 use axum::{middleware, Router};
 
 use super::handler;
-use crate::auth::require_auth;
+use crate::auth::require_admin;
 use crate::state::AppState;
 
-/// Routes for the `users` resource. `register`/`login` and reads are public; writes require
-/// a valid bearer token.
+/// Routes for the `users` resource. `register`/`login` are public; every other route —
+/// including reads — requires an **admin** bearer token (ADR-021).
+///
+/// Self-service (a user reading or editing *their own* record) is intentionally not generated:
+/// it is domain-specific. Add it by comparing the token's `sub` claim to the path id.
 pub fn routes() -> Router<AppState> {
     let public = Router::new()
         .route("/users/register", post(handler::register))
-        .route("/users/login", post(handler::login))
-        .route("/users", get(handler::list))
-        .route("/users/:id", get(handler::show));
+        .route("/users/login", post(handler::login));
 
-    let protected = Router::new()
-        .route("/users", post(handler::create))
-        .route("/users/:id", put(handler::update).delete(handler::delete))
-        .route_layer(middleware::from_fn(require_auth));
+    let admin = Router::new()
+        .route("/users", get(handler::list).post(handler::create))
+        .route(
+            "/users/:id",
+            get(handler::show)
+                .put(handler::update)
+                .delete(handler::delete),
+        )
+        .route_layer(middleware::from_fn(require_admin));
 
-    public.merge(protected)
+    public.merge(admin)
 }
 "#
     .to_string()
@@ -376,6 +384,27 @@ mod tests {
         assert!(out.contains("#[serde(skip_serializing)]\n    pub password: String,"));
         assert!(out.contains("#[allow(dead_code)]"));
         assert!(out.contains("pub is_admin: bool,"));
+    }
+
+    #[test]
+    fn routes_gate_everything_but_register_and_login_on_admin() {
+        let out = routes_rs();
+        // register/login stay public…
+        assert!(out.contains(r#".route("/users/register", post(handler::register))"#));
+        assert!(out.contains(r#".route("/users/login", post(handler::login))"#));
+        // …and everything else, including reads, is behind the admin guard (ADR-021).
+        assert!(out.contains("use crate::auth::require_admin;"));
+        assert!(out.contains("middleware::from_fn(require_admin)"));
+        assert!(out.contains("get(handler::list).post(handler::create)"));
+        assert!(!out.contains("require_auth"));
+    }
+
+    #[test]
+    fn handlers_embed_admin_flag_in_issued_tokens() {
+        let out = handler_rs(Dialect::Postgres);
+        // register never mints an admin token; login reflects the stored flag.
+        assert!(out.contains("issue_token(&user.id, false)"));
+        assert!(out.contains("issue_token(&user.id, user.is_admin)"));
     }
 
     #[test]

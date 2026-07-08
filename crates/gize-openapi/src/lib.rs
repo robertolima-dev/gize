@@ -60,8 +60,16 @@ pub fn spec_json(manifest: &Manifest) -> Result<Value> {
         schemas.insert(format!("Create{name}"), dto_schema(&model));
         schemas.insert(format!("Update{name}"), dto_schema(&model));
 
-        paths.insert(format!("{prefix}/{table}"), collection_path(&table, name));
-        paths.insert(format!("{prefix}/{table}/{{id}}"), item_path(&table, name));
+        // The `users` resource is admin-gated end to end, including reads (ADR-021).
+        let guard_reads = table == "users";
+        paths.insert(
+            format!("{prefix}/{table}"),
+            collection_path(&table, name, guard_reads),
+        );
+        paths.insert(
+            format!("{prefix}/{table}/{{id}}"),
+            item_path(&table, name, guard_reads),
+        );
 
         if table == "users" {
             schemas.insert("LoginRequest".into(), login_request_schema());
@@ -147,73 +155,97 @@ fn json_content(schema: Value) -> Value {
     json!({ "content": { "application/json": { "schema": schema } } })
 }
 
-/// `/<table>` — list (public) and create (guarded).
-fn collection_path(table: &str, name: &str) -> Value {
-    json!({
-        "get": {
-            "tags": [table],
-            "summary": format!("List {table}"),
-            "responses": {
-                "200": json_content(json!({ "type": "array", "items": schema_ref(name) }))
-            }
-        },
-        "post": {
-            "tags": [table],
-            "summary": format!("Create a {name}"),
-            "security": [{ "bearerAuth": [] }],
-            "requestBody": json_content(schema_ref(&format!("Create{name}"))),
-            "responses": {
-                "201": json_content(schema_ref(name)),
-                "401": { "description": "unauthorized" },
-                "409": { "description": "conflict" },
-                "422": { "description": "validation failed" }
-            }
-        }
-    })
+/// Add a response to an operation's `responses` map (no-op if the shape is unexpected).
+fn add_response(op: &mut Value, code: &str, description: &str) {
+    if let Some(responses) = op.get_mut("responses").and_then(|r| r.as_object_mut()) {
+        responses.insert(code.to_string(), json!({ "description": description }));
+    }
 }
 
-/// `/<table>/{id}` — show (public), update and delete (guarded).
-fn item_path(table: &str, name: &str) -> Value {
+/// Mark an otherwise-public read operation as admin-gated: require a bearer token and document
+/// the 401/403 responses. Used for the `users` resource (ADR-021).
+fn guard_read(op: &mut Value) {
+    op["security"] = json!([{ "bearerAuth": [] }]);
+    add_response(op, "401", "unauthorized");
+    add_response(op, "403", "forbidden");
+}
+
+/// `/<table>` — list and create. Reads are public unless `guard_reads` (the `users` resource,
+/// ADR-021), where the list is admin-gated and every write also documents 403.
+fn collection_path(table: &str, name: &str, guard_reads: bool) -> Value {
+    let mut get_op = json!({
+        "tags": [table],
+        "summary": format!("List {table}"),
+        "responses": {
+            "200": json_content(json!({ "type": "array", "items": schema_ref(name) }))
+        }
+    });
+    let mut post_op = json!({
+        "tags": [table],
+        "summary": format!("Create a {name}"),
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": json_content(schema_ref(&format!("Create{name}"))),
+        "responses": {
+            "201": json_content(schema_ref(name)),
+            "401": { "description": "unauthorized" },
+            "409": { "description": "conflict" },
+            "422": { "description": "validation failed" }
+        }
+    });
+    if guard_reads {
+        guard_read(&mut get_op);
+        add_response(&mut post_op, "403", "forbidden");
+    }
+    json!({ "get": get_op, "post": post_op })
+}
+
+/// `/<table>/{id}` — show, update and delete. Reads are public unless `guard_reads` (the
+/// `users` resource, ADR-021), where show is admin-gated and every write also documents 403.
+fn item_path(table: &str, name: &str, guard_reads: bool) -> Value {
     let id_param = json!([{
         "name": "id", "in": "path", "required": true,
         "schema": { "type": "string", "format": "uuid" }
     }]);
-    json!({
-        "get": {
-            "tags": [table],
-            "summary": format!("Get a {name}"),
-            "parameters": id_param,
-            "responses": {
-                "200": json_content(schema_ref(name)),
-                "404": { "description": "not found" }
-            }
-        },
-        "put": {
-            "tags": [table],
-            "summary": format!("Update a {name}"),
-            "security": [{ "bearerAuth": [] }],
-            "parameters": id_param,
-            "requestBody": json_content(schema_ref(&format!("Update{name}"))),
-            "responses": {
-                "200": json_content(schema_ref(name)),
-                "401": { "description": "unauthorized" },
-                "404": { "description": "not found" },
-                "409": { "description": "conflict" },
-                "422": { "description": "validation failed" }
-            }
-        },
-        "delete": {
-            "tags": [table],
-            "summary": format!("Delete a {name}"),
-            "security": [{ "bearerAuth": [] }],
-            "parameters": id_param,
-            "responses": {
-                "204": { "description": "deleted" },
-                "401": { "description": "unauthorized" },
-                "404": { "description": "not found" }
-            }
+    let mut get_op = json!({
+        "tags": [table],
+        "summary": format!("Get a {name}"),
+        "parameters": id_param,
+        "responses": {
+            "200": json_content(schema_ref(name)),
+            "404": { "description": "not found" }
         }
-    })
+    });
+    let mut put_op = json!({
+        "tags": [table],
+        "summary": format!("Update a {name}"),
+        "security": [{ "bearerAuth": [] }],
+        "parameters": id_param,
+        "requestBody": json_content(schema_ref(&format!("Update{name}"))),
+        "responses": {
+            "200": json_content(schema_ref(name)),
+            "401": { "description": "unauthorized" },
+            "404": { "description": "not found" },
+            "409": { "description": "conflict" },
+            "422": { "description": "validation failed" }
+        }
+    });
+    let mut delete_op = json!({
+        "tags": [table],
+        "summary": format!("Delete a {name}"),
+        "security": [{ "bearerAuth": [] }],
+        "parameters": id_param,
+        "responses": {
+            "204": { "description": "deleted" },
+            "401": { "description": "unauthorized" },
+            "404": { "description": "not found" }
+        }
+    });
+    if guard_reads {
+        guard_read(&mut get_op);
+        add_response(&mut put_op, "403", "forbidden");
+        add_response(&mut delete_op, "403", "forbidden");
+    }
+    json!({ "get": get_op, "put": put_op, "delete": delete_op })
 }
 
 fn register_path() -> Value {
@@ -288,9 +320,22 @@ mod tests {
         ] {
             assert!(paths.contains_key(p), "missing path {p}");
         }
-        // Write ops are guarded, reads are not.
+        // Generic resource: write ops are guarded, reads are public.
         assert!(paths["/posts"]["post"].get("security").is_some());
         assert!(paths["/posts"]["get"].get("security").is_none());
+        // `users` is admin-gated end to end, including reads (ADR-021), and reads document 403.
+        assert!(paths["/users"]["get"].get("security").is_some());
+        assert!(paths["/users/{id}"]["get"].get("security").is_some());
+        assert!(paths["/users"]["get"]["responses"].get("403").is_some());
+        assert!(paths["/users"]["post"]["responses"].get("403").is_some());
+        assert!(
+            paths["/users/{id}"]["delete"]["responses"]
+                .get("403")
+                .is_some()
+        );
+        // register/login stay public.
+        assert!(paths["/users/register"]["post"].get("security").is_none());
+        assert!(paths["/users/login"]["post"].get("security").is_none());
     }
 
     #[test]

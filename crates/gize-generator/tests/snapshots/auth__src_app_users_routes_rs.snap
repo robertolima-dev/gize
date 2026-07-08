@@ -1,23 +1,29 @@
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum::{middleware, Router};
 
 use super::handler;
-use crate::auth::require_auth;
+use crate::auth::require_admin;
 use crate::state::AppState;
 
-/// Routes for the `users` resource. `register`/`login` and reads are public; writes require
-/// a valid bearer token.
+/// Routes for the `users` resource. `register`/`login` are public; every other route —
+/// including reads — requires an **admin** bearer token (ADR-021).
+///
+/// Self-service (a user reading or editing *their own* record) is intentionally not generated:
+/// it is domain-specific. Add it by comparing the token's `sub` claim to the path id.
 pub fn routes() -> Router<AppState> {
     let public = Router::new()
         .route("/users/register", post(handler::register))
-        .route("/users/login", post(handler::login))
-        .route("/users", get(handler::list))
-        .route("/users/:id", get(handler::show));
+        .route("/users/login", post(handler::login));
 
-    let protected = Router::new()
-        .route("/users", post(handler::create))
-        .route("/users/:id", put(handler::update).delete(handler::delete))
-        .route_layer(middleware::from_fn(require_auth));
+    let admin = Router::new()
+        .route("/users", get(handler::list).post(handler::create))
+        .route(
+            "/users/:id",
+            get(handler::show)
+                .put(handler::update)
+                .delete(handler::delete),
+        )
+        .route_layer(middleware::from_fn(require_admin));
 
-    public.merge(protected)
+    public.merge(admin)
 }
