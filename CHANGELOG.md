@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-07-08
+
+### Added
+
+- **Documentation set** ([`docs/`](./docs)) — RC deliverable (WS-RC5), closing the gaps the README
+  left:
+  - [Getting started](./docs/getting-started.md) — a linear tutorial from an empty directory to a
+    running, authenticated API with a relationship (SQLite, no server needed).
+  - [Architecture](./docs/architecture.md) — how Gize generates code (crates, the
+    manifest → `Plan` → `Writer` pipeline, drift-aware `sync`, the dialect seam) and the shape of
+    the generated project (module layout, request flow, auth).
+  - [Cookbook](./docs/cookbook.md) — task-sized recipes (fields, relationships, guards/ownership,
+    databases, OpenAPI/admin/WebSocket, API versioning, validation, rebuild-from-manifest).
+  - [FAQ](./docs/faq.md) — ORM? lock-in? editing generated code? production-ready auth? upgrades?
+  - README now links the guide set from its architecture section.
+
 ## [0.8.4] - 2026-07-08
 
 ### Added
