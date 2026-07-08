@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-07-08
+
+### Security
+
+- **Authorization defaults + `users` hardening** (RC hardening — ADR-021, [`SECURITY.md`](./SECURITY.md)):
+  - New generated **`require_admin`** guard alongside `require_auth`: the JWT now carries an
+    `is_admin` claim (set at login), and `require_admin` rejects with **401** when the token is
+    missing/invalid and **403** when the caller is authenticated but not an admin.
+  - The generated **`users` resource is admin-gated by default** — every route except
+    `register`/`login`, *including reads*, now requires an admin token. This closes two defaults
+    that were previously the app's responsibility: any authenticated user could edit/delete other
+    users, and `GET /users` publicly exposed names/emails (user enumeration). `register` still
+    forces `is_admin = false`.
+  - **Generic resources are unchanged** (`gize make crud`): writes require `require_auth`, reads
+    stay public. Role/ownership authorization there remains the developer's job; ownership is
+    intentionally not auto-generated (compare the token `sub` to the record). The OpenAPI spec
+    reflects the new `users` guards (security + 401/403 on reads and writes).
+
+### Fixed
+
+- **Generated auth module compiles clean in every project shape.** A project created with
+  `--no-user` and only generic CRUD resources generated the full auth module but never called its
+  password-hashing/token helpers, so `cargo clippy -D warnings` failed on dead code. The generated
+  `src/auth/mod.rs` is now a self-consistent toolkit (`#![allow(dead_code)]` with a note) that
+  stays clippy-clean whether or not a `users`/login resource is present.
+
 ## [0.8.2] - 2026-07-07
 
 ### Added

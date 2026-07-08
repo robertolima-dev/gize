@@ -7,20 +7,20 @@ members = ["crates/*", "examples/gize-healthcheck"]
 exclude = ["examples/gize-chat"]
 
 [workspace.package]
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/robertolima-dev/gize"
 rust-version = "1.85"
 
 [workspace.dependencies]
-gize-core = { path = "crates/gize-core", version = "0.8.2" }
-gize-generator = { path = "crates/gize-generator", version = "0.8.2" }
-gize-templates = { path = "crates/gize-templates", version = "0.8.2" }
-gize-db = { path = "crates/gize-db", version = "0.8.2" }
-gize-macros = { path = "crates/gize-macros", version = "0.8.2" }
-gize-openapi = { path = "crates/gize-openapi", version = "0.8.2" }
-gize-admin = { path = "crates/gize-admin", version = "0.8.2" }
+gize-core = { path = "crates/gize-core", version = "0.8.3" }
+gize-generator = { path = "crates/gize-generator", version = "0.8.3" }
+gize-templates = { path = "crates/gize-templates", version = "0.8.3" }
+gize-db = { path = "crates/gize-db", version = "0.8.3" }
+gize-macros = { path = "crates/gize-macros", version = "0.8.3" }
+gize-openapi = { path = "crates/gize-openapi", version = "0.8.3" }
+gize-admin = { path = "crates/gize-admin", version = "0.8.3" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

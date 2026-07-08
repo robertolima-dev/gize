@@ -30,27 +30,42 @@ the application's responsibility. Read this before shipping.
 
 **Use a long, random `GIZE_JWT_SECRET` in production.** HS256 is only as strong as its secret.
 
-### Authorization (your responsibility)
+### Authorization (ADR-021)
 
-The generated `require_auth` middleware checks that a request carries a **valid token** — it does
-**not** check roles or ownership. Out of the box, **any authenticated user can call any guarded
-write route**, including modifying or deleting other users. The `users` table ships an `is_admin`
-flag, but the generated routes do not gate on it.
+Gize generates two guards in `src/auth/mod.rs`:
 
-Before production you must add the authorization your domain needs, for example:
+- `require_auth` — the request carries a **valid token** (rejects with `401` otherwise).
+- `require_admin` — the token additionally has `is_admin == true` (rejects with `401` when the
+  token is missing/invalid, `403` when the caller is authenticated but not an admin). The admin
+  flag is embedded in the token at login, so no per-request database read is needed.
 
-- ownership checks (a user may edit only their own records), and/or
-- role checks (gate admin routes on `is_admin`).
+**The `users` resource is admin-gated by default.** Every `users` route except `register`/`login`
+— *including reads* — requires an admin token, so no authenticated user can list, edit or delete
+other accounts, and account listings are not exposed. `register` still forces `is_admin = false`
+so a client cannot grant itself admin; admins are created via the admin-guarded `POST /users` or
+`gize createadmin`.
 
-`register` already forces `is_admin = false` so a client cannot grant itself admin through the
-public endpoint; admins are created via the guarded `POST /users` or `gize createadmin`.
+**Generic resources** (from `gize make crud`) keep the pragmatic default: **writes require
+`require_auth`, reads are public** (see below). Role and ownership authorization there is still
+**your responsibility** — the building blocks are provided:
+
+- ownership checks (a user may act only on their own records) — compare the token's `sub` claim to
+  the record; **not** auto-generated, since it is domain-specific;
+- role checks — apply `require_admin` (or your own guard) to the routes that need it.
+
+Because the admin flag lives in the token, changing a user's `is_admin` only takes effect on their
+next login (tokens are short-lived; see `TOKEN_TTL_SECS`). For immediate revocation you need
+server-side sessions (a tracked post-1.0 option).
 
 ### Public read routes
 
-Generated `GET /<resource>` and `GET /<resource>/:id` are **public** by default (only writes are
-guarded). For the `users` resource this exposes names, emails and the `is_admin` flag (never the
-password hash) and allows listing all accounts. If that is not acceptable, move those routes into
-the guarded router in `src/app/users/routes.rs`.
+For **generic** resources, `GET /<resource>` and `GET /<resource>/:id` are **public** by default
+(only writes are guarded) — the intended model for public data such as blog posts. If a given
+resource must not be world-readable, move its read routes into the guarded router (wrap them with
+`require_auth` or `require_admin`) in `src/app/<resource>/routes.rs`.
+
+The `users` resource is the exception: its reads are **admin-gated** (ADR-021), so names, emails
+and the `is_admin` flag are never exposed publicly and accounts cannot be enumerated.
 
 ### Error responses
 
