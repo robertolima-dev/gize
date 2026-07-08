@@ -132,22 +132,35 @@ jobs:
           EOF
           set -a; . ./.env; set +a
           "$GIZE" migrate
+          # An admin is needed to exercise the admin-gated users routes (ADR-021).
+          ADMPW='adminpass123' "$GIZE" createadmin --email admin@x.com --name Admin --password-env ADMPW
           cargo build
           ./target/debug/blog & SRV=$!
           trap 'kill $SRV 2>/dev/null || true' EXIT
-          for i in $(seq 1 60); do curl -sf localhost:8080/users >/dev/null 2>&1 && break; sleep 1; done
+          # `posts` reads are public (generic resource), so use one as the readiness probe.
+          for i in $(seq 1 60); do curl -sf localhost:8080/posts >/dev/null 2>&1 && break; sleep 1; done
           code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-          # writes require auth
+          token_of() { python3 -c "import sys,json;print(json.load(sys.stdin)['token'])"; }
+          # generic-resource writes require auth
           [ "$(code -X POST localhost:8080/posts -d '{}')" = "401" ]
-          # register returns a token; create with it succeeds
+          # register is public and returns a token (for a non-admin user)
           TOKEN=$(curl -s -X POST localhost:8080/users/register -H 'content-type: application/json' \
-            -d '{"name":"Ada","email":"ada@x.com","password":"longenough","is_admin":false}' \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
-          AUTHOR=$(curl -s localhost:8080/users | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
-          [ "$(code -X POST localhost:8080/posts -H "authorization: Bearer $TOKEN" \
-            -H 'content-type: application/json' \
-            -d "{\"title\":\"Hi\",\"published\":true,\"author_id\":\"$AUTHOR\"}")" = "201" ]
+            -d '{"name":"Ada","email":"ada@x.com","password":"longenough","is_admin":false}' | token_of)
+          # the users resource is admin-gated end to end (ADR-021): reads are 401 without a token,
+          # 403 with a non-admin token, and 200 only for an admin. (HTTP codes are captured into
+          # variables first: nesting quoted JSON inside `[ "$(...)" ]` trips bash brace expansion.)
+          NOAUTH=$(code localhost:8080/users);                                     [ "$NOAUTH" = "401" ]
+          NONADMIN=$(code localhost:8080/users -H "authorization: Bearer $TOKEN");  [ "$NONADMIN" = "403" ]
+          ADMTOK=$(curl -s -X POST localhost:8080/users/login -H 'content-type: application/json' \
+            -d '{"email":"admin@x.com","password":"adminpass123"}' | token_of)
+          ADMIN=$(code localhost:8080/users -H "authorization: Bearer $ADMTOK");    [ "$ADMIN" = "200" ]
+          # an author id (read with the admin token) lets the non-admin user create a post
+          AUTHOR=$(curl -s localhost:8080/users -H "authorization: Bearer $ADMTOK" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])")
+          POST_BODY="{\"title\":\"Hi\",\"published\":true,\"author_id\":\"$AUTHOR\"}"
+          CREATED=$(code -X POST localhost:8080/posts -H "authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' -d "$POST_BODY");                   [ "$CREATED" = "201" ]
           # duplicate email is a 409 (SQLite unique violation mapped through the dialect seam)
           [ "$(code -X POST localhost:8080/users/register -H 'content-type: application/json' \
             -d '{"name":"B","email":"ada@x.com","password":"longenough","is_admin":false}')" = "409" ]
-          echo "e2e OK: 401 unauth, 201 authed create, 409 duplicate — on a generated SQLite app"
+          echo "e2e OK: users admin-gated (401/403/200), posts 401 unauth / 201 authed, 409 duplicate — SQLite app"
