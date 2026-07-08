@@ -543,8 +543,14 @@ gize ──> gize-generator ──> gize-templates ──┐
 | `gize` | The `gize` binary (clap). Orchestrates the above. |
 | `gize-admin`, `gize-auth`, `gize-openapi`, `gize-testing` | Planned feature crates (placeholders today). |
 
-Design decisions live in [`ADR/`](./ADR); the vision, MVP scope, and roadmap live in
-[`docs/`](./docs).
+Design decisions live in [`ADR/`](./ADR). Guides live in [`docs/`](./docs):
+
+- [Getting started](./docs/getting-started.md) — empty directory to a running authenticated API.
+- [Architecture](./docs/architecture.md) — how Gize generates code, and the shape of what it emits.
+- [Cookbook](./docs/cookbook.md) — task-sized recipes (relationships, auth, OpenAPI, admin, …).
+- [FAQ](./docs/faq.md) — is it an ORM, does it lock me in, is the auth production-ready, …
+- [Migration guide](./MIGRATION.md) · [Stability policy](./STABILITY.md) · [Security](./SECURITY.md)
+- [Vision](./docs/vision.md) · [MVP](./docs/mvp.md) · [Roadmap](./docs/roadmap.md)
 
 ## Examples
 
