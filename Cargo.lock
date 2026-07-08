@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "gize"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "argon2",
@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "gize-admin"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "gize-core",
@@ -629,11 +629,11 @@ dependencies = [
 
 [[package]]
 name = "gize-auth"
-version = "0.8.5"
+version = "0.8.6"
 
 [[package]]
 name = "gize-core"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "serde",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "gize-db"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "gize-core",
@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "gize-generator"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "criterion",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "gize-healthcheck"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "gize-generator",
@@ -674,11 +674,11 @@ dependencies = [
 
 [[package]]
 name = "gize-macros"
-version = "0.8.5"
+version = "0.8.6"
 
 [[package]]
 name = "gize-openapi"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "anyhow",
  "gize-core",
@@ -687,14 +687,14 @@ dependencies = [
 
 [[package]]
 name = "gize-templates"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "gize-core",
 ]
 
 [[package]]
 name = "gize-testing"
-version = "0.8.5"
+version = "0.8.6"
 
 [[package]]
 name = "half"

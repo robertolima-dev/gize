@@ -601,6 +601,62 @@ fn sync_after_a_version_upgrade_preserves_on_disk_code() {
     );
 }
 
+fn rustfmt_available() -> bool {
+    std::process::Command::new("rustfmt")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// `gize new`/`make` write rustfmt-formatted code (ADR-020), but `sync`'s desired plan holds the
+/// raw templates. Reconciliation must not mistake that pure formatting difference for a hand edit,
+/// or every freshly generated project would report drift. Guarded on `rustfmt` (the seam is
+/// best-effort).
+#[test]
+fn sync_ignores_pure_formatting_differences() {
+    if !rustfmt_available() {
+        return;
+    }
+    let root = unique_tmpdir();
+    // Generate the way the CLI does: format on write.
+    apply(
+        &root,
+        &scaffold::new_project("shop", true, false, false, Dialect::Postgres, None, TS),
+        Options {
+            force: false,
+            dry_run: false,
+            format: true,
+        },
+    );
+
+    // A freshly generated, untouched project is in sync with its manifest — no spurious drift.
+    let recon = gize_generator::sync::reconcile(&root, &desired_code_plan(&root)).unwrap();
+    assert!(
+        recon.is_in_sync(),
+        "a freshly generated project must not report drift; drifted: {:?}",
+        recon
+            .drift
+            .iter()
+            .map(|op| op.path.display().to_string())
+            .collect::<Vec<_>>()
+    );
+
+    // A real hand edit is still detected as drift (not masked by formatting).
+    let edited = root.join("src/app/users/service.rs");
+    fs::write(
+        &edited,
+        format!(
+            "{}\nfn my_helper() -> i32 {{ 42 }}\n",
+            fs::read_to_string(&edited).unwrap()
+        ),
+    )
+    .unwrap();
+    let recon = gize_generator::sync::reconcile(&root, &desired_code_plan(&root)).unwrap();
+    assert_eq!(recon.drift.len(), 1, "the hand edit must still be drift");
+    assert!(recon.drift[0].path.ends_with("users/service.rs"));
+}
+
 /// Record the Product module's shape in the project manifest, as `gize make crud` does.
 fn record_products_in_manifest(root: &Path) {
     let path = root.join("gize.toml");

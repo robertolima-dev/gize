@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-07-08
+
+### Fixed
+
+- **`gize sync` no longer reports spurious drift on formatting.** The desired plan holds the raw
+  templates while the CLI writes rustfmt-formatted code (ADR-020), so `sync` reported freshly
+  generated, untouched files as "drift". Reconciliation now compares `.rs` files in canonical
+  (rustfmt) form, so a pure formatting difference is not drift — only genuine hand edits are.
+  Found while writing the RC validation walkthrough.
+
+### Added
+
+- **RC validation material** (WS-RC6): a scripted [validation walkthrough](./docs/validation.md)
+  (cold install from crates.io → build an app exercising the whole surface → verify against
+  documented behavior, with an acceptance checklist) and GitHub **issue templates**
+  (`.github/ISSUE_TEMPLATE/`: bug report + RC validation report) for structured, independent
+  feedback.
+- Regression test `sync_ignores_pure_formatting_differences` for the drift fix above.
+
 ## [0.8.5] - 2026-07-08
 
 ### Added

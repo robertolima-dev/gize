@@ -140,6 +140,39 @@ pub fn format_rust_files(files: &[PathBuf]) {
         .status();
 }
 
+/// Format Rust source **text** with `rustfmt` (stdin → stdout), returning the canonical form.
+///
+/// Best-effort like [`format_rust_files`]: if `rustfmt` is missing or fails, the input is
+/// returned unchanged. Used by `gize sync` to compare a raw template against the formatted code
+/// the CLI wrote to disk (ADR-020), so a pure formatting difference is not reported as drift.
+pub fn format_rust_str(src: &str) -> String {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = match Command::new("rustfmt")
+        .arg("--edition")
+        .arg("2024")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return src.to_string(),
+    };
+
+    // Write the source and close stdin (drop) so rustfmt sees EOF, then read its stdout.
+    if let Some(mut stdin) = child.stdin.take() {
+        if stdin.write_all(src.as_bytes()).is_err() {
+            return src.to_string();
+        }
+    }
+    match child.wait_with_output() {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).into_owned(),
+        _ => src.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
