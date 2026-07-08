@@ -47,12 +47,29 @@ pub fn reconcile(root: &Path, plan: &Plan) -> Result<Reconciliation> {
                 fs::read_to_string(&path).with_context(|| format!("reading {display}"))?;
             if current == op.contents {
                 recon.unchanged.push(display);
+            } else if is_rust(&op.path) && rust_equivalent(&current, &op.contents) {
+                // The plan holds the raw template; the CLI wrote it through rustfmt (ADR-020).
+                // A pure formatting difference is not a hand edit, so compare canonical forms and
+                // treat them as in sync — otherwise every freshly generated project would look
+                // like it had drifted.
+                recon.unchanged.push(display);
             } else {
                 recon.drift.push(op.clone());
             }
         }
     }
     Ok(recon)
+}
+
+fn is_rust(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "rs")
+}
+
+/// Whether two Rust sources are the same once formatted — i.e. they differ only in formatting.
+/// Best-effort: if `rustfmt` is unavailable the canonical form is the input, so this is a plain
+/// comparison and the caller falls back to treating the files as drifted (conservative).
+fn rust_equivalent(a: &str, b: &str) -> bool {
+    crate::writer::format_rust_str(a) == crate::writer::format_rust_str(b)
 }
 
 /// What `apply` did (or, under `dry_run`, would do).

@@ -19,6 +19,7 @@
     "askama",
     "prettyplease",
     "rustfmt",
+    "rustc",
     "clippy",
     "Miri",
     "codegen",
