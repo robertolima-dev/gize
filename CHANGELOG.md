@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-07-08
+
+### Added
+
+- **Migration & upgrade guide** ([`MIGRATION.md`](./MIGRATION.md)) — RC deliverable (WS-RC4).
+  Documents how to upgrade the `gize` CLI and reconcile an existing project without losing hand
+  edits: the drift-aware `gize sync` model (`--dry-run` preview, `--force` opt-in), schema
+  migration flow, and per-version notes (starting with the 0.8.3 `users` admin-gating change).
+- **Regen-safety regression test** (`sync_after_a_version_upgrade_preserves_on_disk_code`) proving
+  that re-running `sync` after a version upgrade never overwrites on-disk code without `--force` —
+  whether a file differs because it was hand-edited or because the templates changed between
+  versions.
+
 ## [0.8.3] - 2026-07-08
 
 ### Security
