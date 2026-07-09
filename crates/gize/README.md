@@ -50,8 +50,8 @@ gize serve
 ```
 
 You now have working `GET`, `POST`, `PUT` and `DELETE` `/products` endpoints backed by the
-database. Every new project ships a built-in `users` resource with auth (register/login,
-password hashing, guarded write routes).
+database. Every new project ships a built-in `users` resource with auth (register/login, a
+self-service `GET /users/me`, password hashing, and admin-gated management routes).
 
 ## Command reference
 

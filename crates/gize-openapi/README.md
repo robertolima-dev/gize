@@ -10,9 +10,9 @@ DTOs, the same source of truth the CRUD and admin generators use, so the spec ma
 generated routes by construction rather than by hand-kept annotations. See
 [ADR-010](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-010-openapi.md).
 
-The spec covers each resource's CRUD plus the `users` register/login endpoints, marks write
-routes as bearer-secured, hides `password` from responses, and includes relationship foreign
-keys. Enable it with `gize new --openapi` (or `features.openapi` in `gize.toml`); the app then
+The spec covers each resource's CRUD plus the `users` register/login and self-service
+`GET /users/me` endpoints, marks write and admin-gated routes as bearer-secured, hides
+`password` from responses, and includes relationship foreign keys. Enable it with `gize new --openapi` (or `features.openapi` in `gize.toml`); the app then
 serves it at `GET /openapi.json` with a reference UI at `/docs`, and `gize sync` keeps it in
 step with the manifest.
 
