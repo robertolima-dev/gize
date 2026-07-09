@@ -6,7 +6,8 @@
 
 Authentication shipped in the Alpha, but it is **generated inline** into each project (a
 `src/auth` module with Argon2 password hashing, stateless JWT, a route guard, and
-register/login on the built-in `users` resource), not pulled in as a library. That keeps the
+register/login plus a self-service `GET /users/me` on the built-in `users` resource), not
+pulled in as a library. That keeps the
 auth code idiomatic and fully owned by you, with no hidden framework. See
 [ADR-013](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-013-auth.md).
 

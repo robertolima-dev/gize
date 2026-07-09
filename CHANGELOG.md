@@ -6,7 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (pre-1.0: minor versions may introduce changes to generated output).
 
+
 ## [Unreleased]
+
+## [0.8.8] - 2026-07-09
+
+### Documentation
+
+- **Documented the default `/users/me` route** (shipped in 0.8.7) across the READMEs: the global
+  README's "Built-in `users` resource" section now carries a routes-and-authorization table
+  (public `register`/`login`, authenticated `GET /users/me`, admin-gated management), and the
+  `gize`, `gize-auth`, `gize-openapi` and `gize-templates` crate READMEs mention the self-service
+  endpoint. Also refreshed the stale note that claimed password hashing and register/login were
+  still pending — they ship today.
+
+### Fixed
+
+- **Format check on CI.** The 0.8.7 `/users/me` OpenAPI parity test was written as a single-line
+  `assert_eq!` that exceeded the line width, so `cargo fmt --all -- --check` failed. Reformatted
+  to the multi-line form rustfmt produces (no behavior change).
 
 ## [0.8.7] - 2026-07-09
 
