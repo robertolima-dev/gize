@@ -109,6 +109,8 @@ What you will see (the generated authorization model):
 
 - `POST /posts` without a token → **401**; with any valid token → **201**.
 - `GET /users` → **401** without a token, **403** for a non-admin, **200** only for an admin.
+- `GET /users/me` → **401** without a token; with any valid token → **200** with the caller's
+  own record (self-service, identified by the token's `sub` claim — no admin flag required).
 - `GET /posts` (a generic resource) → **public**.
 - A registered user is never an admin; passwords are hashed and never serialized.
 

@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::Extension;
 
 use validator::Validate;
 
@@ -8,11 +9,22 @@ use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
 use super::error::Error;
 use super::model::User;
 use super::service;
-use crate::auth::{hash_password, issue_token, verify_password};
+use crate::auth::{hash_password, issue_token, verify_password, Claims};
 use crate::state::AppState;
 
 pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
     Ok(Json(service::list(&state.db).await?))
+}
+
+/// Self-service: return the authenticated caller's own record. The user is identified by the
+/// `sub` claim of their bearer token (set at register/login), so any valid token works — no
+/// admin flag required. `require_auth` puts the `Claims` in the request extensions.
+pub async fn me(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<User>, Error> {
+    let id = claims.sub.parse::<uuid::Uuid>().map_err(|_| Error::Unauthorized)?;
+    Ok(Json(service::find(&state.db, id).await?))
 }
 
 pub async fn show(

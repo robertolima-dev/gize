@@ -27,6 +27,7 @@ pub fn operations(manifest: &Manifest) -> Result<Vec<(String, String)>> {
         if table == "users" {
             ops.push(("post".into(), format!("{prefix}/users/register")));
             ops.push(("post".into(), format!("{prefix}/users/login")));
+            ops.push(("get".into(), format!("{prefix}/users/me")));
         }
     }
     Ok(ops)
@@ -76,6 +77,7 @@ pub fn spec_json(manifest: &Manifest) -> Result<Value> {
             schemas.insert("TokenResponse".into(), token_response_schema());
             paths.insert(format!("{prefix}/users/register"), register_path());
             paths.insert(format!("{prefix}/users/login"), login_path());
+            paths.insert(format!("{prefix}/users/me"), me_path());
         }
     }
 
@@ -278,6 +280,23 @@ fn login_path() -> Value {
     })
 }
 
+/// `/users/me` — self-service read of the caller's own record. Needs any valid bearer token
+/// (not admin); the user is identified by the token's `sub` claim.
+fn me_path() -> Value {
+    json!({
+        "get": {
+            "tags": ["users"],
+            "summary": "Get the authenticated user's own record",
+            "security": [{ "bearerAuth": [] }],
+            "responses": {
+                "200": json_content(schema_ref("User")),
+                "401": { "description": "unauthorized" },
+                "404": { "description": "not found" }
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,6 +355,11 @@ mod tests {
         // register/login stay public.
         assert!(paths["/users/register"]["post"].get("security").is_none());
         assert!(paths["/users/login"]["post"].get("security").is_none());
+        // `/users/me` is self-service: it requires a bearer token but is not admin-gated.
+        assert!(paths.contains_key("/users/me"), "missing path /users/me");
+        assert!(paths["/users/me"]["get"].get("security").is_some());
+        assert_eq!(paths["/users/me"]["get"]["responses"]["200"]["content"]
+            ["application/json"]["schema"]["$ref"], "#/components/schemas/User");
     }
 
     #[test]

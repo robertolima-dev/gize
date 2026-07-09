@@ -8,6 +8,9 @@
 //!
 //! `is_admin` is included from day one so a future admin panel / `gize-auth` has a flag to
 //! gate access on (see BACKLOG.md).
+//!
+//! A self-service `GET /users/me` route is generated too: any authenticated caller can read
+//! their own record, identified by the token's `sub` claim (no admin flag required).
 
 use gize_core::{Dialect, Field, FieldType, ModelSpec};
 
@@ -182,6 +185,7 @@ pub fn handler_rs(dialect: Dialect) -> String {
     r#"use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::Extension;
 
 use validator::Validate;
 
@@ -189,11 +193,22 @@ use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
 use super::error::Error;
 use super::model::User;
 use super::service;
-use crate::auth::{hash_password, issue_token, verify_password};
+use crate::auth::{hash_password, issue_token, verify_password, Claims};
 use crate::state::AppState;
 
 pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
     Ok(Json(service::list(&state.db).await?))
+}
+
+/// Self-service: return the authenticated caller's own record. The user is identified by the
+/// `sub` claim of their bearer token (set at register/login), so any valid token works — no
+/// admin flag required. `require_auth` puts the `Claims` in the request extensions.
+pub async fn me(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<User>, Error> {
+    let id = claims.sub.parse::<uuid::Uuid>().map_err(|_| Error::Unauthorized)?;
+    Ok(Json(service::find(&state.db, id).await?))
 }
 
 pub async fn show(
@@ -304,18 +319,24 @@ pub fn routes_rs() -> String {
 use axum::{middleware, Router};
 
 use super::handler;
-use crate::auth::require_admin;
+use crate::auth::{require_admin, require_auth};
 use crate::state::AppState;
 
-/// Routes for the `users` resource. `register`/`login` are public; every other route —
-/// including reads — requires an **admin** bearer token (ADR-021).
+/// Routes for the `users` resource. `register`/`login` are public; `GET /users/me` is
+/// self-service (any authenticated user reads their own record); every other route — including
+/// reads of arbitrary users — requires an **admin** bearer token (ADR-021).
 ///
-/// Self-service (a user reading or editing *their own* record) is intentionally not generated:
-/// it is domain-specific. Add it by comparing the token's `sub` claim to the path id.
+/// `/users/me` is a static segment, so it takes precedence over the `/users/:id` param route
+/// even though they are declared on different sub-routers.
 pub fn routes() -> Router<AppState> {
     let public = Router::new()
         .route("/users/register", post(handler::register))
         .route("/users/login", post(handler::login));
+
+    // Self-service: any authenticated caller can read their own record via the token's `sub`.
+    let authed = Router::new()
+        .route("/users/me", get(handler::me))
+        .route_layer(middleware::from_fn(require_auth));
 
     let admin = Router::new()
         .route("/users", get(handler::list).post(handler::create))
@@ -327,7 +348,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route_layer(middleware::from_fn(require_admin));
 
-    public.merge(admin)
+    public.merge(authed).merge(admin)
 }
 "#
     .to_string()
@@ -387,16 +408,26 @@ mod tests {
     }
 
     #[test]
-    fn routes_gate_everything_but_register_and_login_on_admin() {
+    fn routes_gate_reads_of_other_users_on_admin_but_expose_self_service_me() {
         let out = routes_rs();
         // register/login stay public…
         assert!(out.contains(r#".route("/users/register", post(handler::register))"#));
         assert!(out.contains(r#".route("/users/login", post(handler::login))"#));
-        // …and everything else, including reads, is behind the admin guard (ADR-021).
-        assert!(out.contains("use crate::auth::require_admin;"));
+        // …`/users/me` is self-service behind a plain auth guard (any valid token)…
+        assert!(out.contains(r#".route("/users/me", get(handler::me))"#));
+        assert!(out.contains("use crate::auth::{require_admin, require_auth};"));
+        assert!(out.contains("middleware::from_fn(require_auth)"));
+        // …and reads of arbitrary users stay behind the admin guard (ADR-021).
         assert!(out.contains("middleware::from_fn(require_admin)"));
         assert!(out.contains("get(handler::list).post(handler::create)"));
-        assert!(!out.contains("require_auth"));
+    }
+
+    #[test]
+    fn me_handler_reads_own_record_from_token_subject() {
+        let out = handler_rs(Dialect::Postgres);
+        assert!(out.contains("pub async fn me("));
+        assert!(out.contains("Extension(claims): Extension<Claims>"));
+        assert!(out.contains("claims.sub.parse::<uuid::Uuid>()"));
     }
 
     #[test]

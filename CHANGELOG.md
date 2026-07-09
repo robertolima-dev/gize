@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-07-09
+
+### Added
+
+- **`gize new` scaffolds a self-service `GET /users/me` route by default.** Any authenticated
+  caller can now read their own record, identified by the token's `sub` claim (no admin flag
+  required) — the common "current user" endpoint every app needs. `require_auth` now stores the
+  validated `Claims` in the request extensions so the `me` handler recovers the caller's identity
+  with `Extension<Claims>`. `register`/`login` stay public and reads of arbitrary users stay
+  admin-gated (ADR-021). The generated OpenAPI spec gains the matching `/users/me` path.
+
 ## [0.8.6] - 2026-07-08
 
 ### Fixed
