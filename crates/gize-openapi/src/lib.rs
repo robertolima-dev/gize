@@ -358,8 +358,11 @@ mod tests {
         // `/users/me` is self-service: it requires a bearer token but is not admin-gated.
         assert!(paths.contains_key("/users/me"), "missing path /users/me");
         assert!(paths["/users/me"]["get"].get("security").is_some());
-        assert_eq!(paths["/users/me"]["get"]["responses"]["200"]["content"]
-            ["application/json"]["schema"]["$ref"], "#/components/schemas/User");
+        assert_eq!(
+            paths["/users/me"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+                ["$ref"],
+            "#/components/schemas/User"
+        );
     }
 
     #[test]
