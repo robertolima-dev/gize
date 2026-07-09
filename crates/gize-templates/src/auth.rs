@@ -80,7 +80,10 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 
 /// JWT claims: the subject (user id), the admin flag, issued-at and expiry (seconds since the
 /// Unix epoch). `is_admin` is captured at login so `require_admin` needs no per-request DB read.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// `require_auth` stores the validated `Claims` in the request extensions, so a guarded handler
+/// can read the caller's identity with `Extension<Claims>` (see the `users` `me` route).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
     pub is_admin: bool,
@@ -135,8 +138,13 @@ fn bearer_claims(req: &Request) -> Result<Claims, AuthError> {
 /// Axum middleware that rejects unauthenticated requests. Apply it with
 /// `.route_layer(axum::middleware::from_fn(require_auth))` on the routes you want to protect.
 /// The default `users` slice uses `require_admin`; generic `make crud` resources use this.
-pub async fn require_auth(req: Request, next: Next) -> Result<Response, AuthError> {
-    bearer_claims(&req)?;
+///
+/// The validated `Claims` are inserted into the request extensions, so a guarded handler can
+/// recover the caller's identity with `Extension<Claims>` (e.g. the `users` `me` self-service
+/// route).
+pub async fn require_auth(mut req: Request, next: Next) -> Result<Response, AuthError> {
+    let claims = bearer_claims(&req)?;
+    req.extensions_mut().insert(claims);
     Ok(next.run(req).await)
 }
 
