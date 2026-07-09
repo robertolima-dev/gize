@@ -22,7 +22,8 @@ plain SQL migrations. No hidden runtime, no reflection.
   SQLite).
 - **`crud`**: a complete layered CRUD resource (model, dto, repository, service, handler,
   routes, error, tests), with request validation and integrity-error mapping.
-- **`user`**: the built-in `users` slice (password hashing, register/login).
+- **`user`**: the built-in `users` slice (password hashing, register/login, a self-service
+  `GET /users/me`, and admin-gated management routes).
 - **`auth`**: the generated `src/auth` module (Argon2 + JWT, route guard).
 - **`openapi`**: the route module that serves `/openapi.json` and `/docs`.
 

@@ -149,8 +149,9 @@ gize serve
 
 > Every new project already ships a **`users` resource** (model, CRUD and a migration with
 > an `is_admin` flag) wired in, so after `gize migrate` you also have working
-> `GET/POST/PUT/DELETE /users` endpoints. Pass `gize new shop --no-user` to skip it. See
-> [Built-in `users` resource](#built-in-users-resource).
+> `GET/POST/PUT/DELETE /users` endpoints, public `POST /users/register` and `POST /users/login`,
+> and a self-service `GET /users/me` (the authenticated caller's own record). Pass
+> `gize new shop --no-user` to skip it. See [Built-in `users` resource](#built-in-users-resource).
 
 Now exercise the API:
 
@@ -357,12 +358,24 @@ CREATE TABLE users (
 - **`is_admin`** ships from day one as the flag a future admin panel / `gize-auth` can gate
   access on; it defaults to `false`.
 - **`password`** is marked `#[serde(skip_serializing)]` on the model, so its hash is read
-  from the database but **never serialized into API responses**.
+  from the database but **never serialized into API responses**. It is hashed with Argon2id
+  before storage; the plaintext never touches the database.
 
-> The `users` resource reuses the generic CRUD templates, so `CreateUser` currently accepts
-> `password` as plain text and lets `is_admin` be set on create. Password hashing, dropping
-> `is_admin` from the create DTO, and register/login endpoints are tracked in
-> [`BACKLOG.md`](./BACKLOG.md) and land with `gize-auth`.
+### Generated routes and authorization
+
+The slice ships an auth-hardened route set out of the box
+([ADR-013](./ADR/adr-013-auth.md) / [ADR-021](./ADR/adr-021-authorization.md)):
+
+| Route | Access |
+| --- | --- |
+| `POST /users/register` | **Public** — creates a user (never an admin) and returns a token. |
+| `POST /users/login` | **Public** — exchanges email + password for a token. |
+| `GET /users/me` | **Authenticated** — returns the caller's own record, identified by the token's `sub` claim (no admin flag required). |
+| `GET/POST /users`, `GET/PUT/DELETE /users/:id` | **Admin** — every other route, including reads, requires an admin bearer token. |
+
+The identity resource is locked down by default: reads of arbitrary users are admin-gated so
+the API neither leaks emails/enumeration through public reads nor lets any authenticated user
+manage others. `/users/me` is the self-service escape hatch for "the current user".
 
 ## Models and field types
 
