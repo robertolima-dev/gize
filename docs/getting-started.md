@@ -95,6 +95,10 @@ The API is on `http://localhost:8080`. In another terminal:
 curl -s -X POST localhost:8080/users/register -H 'content-type: application/json' \
   -d '{"name":"Ada","email":"ada@example.com","password":"longenough","is_admin":false}'
 
+# public: log in an existing account (e.g. the admin from `gize createadmin`) — same token shape
+curl -s -X POST localhost:8080/users/login -H 'content-type: application/json' \
+  -d '{"email":"ada@example.com","password":"longenough"}'
+
 # public: reads on a generic resource
 curl -s localhost:8080/posts
 

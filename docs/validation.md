@@ -85,7 +85,11 @@ curl -s -X POST localhost:8080/users/register -H 'content-type: application/json
 # users resource is admin-gated (ADR-021)
 code localhost:8080/users                            # expect 401 (no token)
 code localhost:8080/users -H "authorization: Bearer <ada-token>"    # expect 403 (not admin)
-# log in as the admin, then:
+
+# log in as the admin (the account from `gize createadmin`) and grab the token from the JSON body
+curl -s -X POST localhost:8080/users/login -H 'content-type: application/json' \
+  -d '{"email":"admin@example.com","password":"<the-password-you-set>"}'
+
 code localhost:8080/users -H "authorization: Bearer <admin-token>"  # expect 200
 ```
 
@@ -100,6 +104,10 @@ code localhost:8080/users -H "authorization: Bearer <admin-token>"  # expect 200
 ```sh
 gize make admin           # generates a Vite + React admin SPA; `gize serve` serves it too
 ```
+
+The SPA and its Node dependencies live under `admin/`. `gize serve` installs them and starts the
+dev server for you on first run — you don't need to touch `pnpm` yourself. If you do run a package
+manager command by hand, run it from the `admin/` directory.
 
 Repeat steps 1–4 with `--database postgres`/`mysql`, or scaffold with `--api-version 1` (routes
 under `/api/v1/...`) or `--websocket`.

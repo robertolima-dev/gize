@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.9] - 2026-07-13
+
+### Fixed
+
+- **`gize serve` no longer needs a manual `pnpm approve-builds`.** pnpm v10 blocks dependency
+  build scripts by default, so the admin SPA's `esbuild` (pulled in by Vite) was left without its
+  native binary after the first-run `pnpm install` and the dev server failed until the user ran
+  `pnpm approve-builds` once. The generated `admin/package.json` now declares
+  `pnpm.onlyBuiltDependencies: ["esbuild"]`, so `pnpm install` approves that build automatically
+  and `gize serve` works on the first run. Reported in RC validation (#24).
+
+### Documentation
+
+- **RC validation walkthrough: show how to get the admin token.** `docs/validation.md` said
+  "log in as the admin" without the actual request; it now includes the `POST /users/login`
+  example, and notes that the admin SPA lives in `admin/` (any manual `pnpm` command runs from
+  there). `docs/getting-started.md` gained the same login example. Reported in RC validation (#24).
+
 ## [0.8.8] - 2026-07-09
 
 ### Documentation
