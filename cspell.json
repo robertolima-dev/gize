@@ -47,6 +47,7 @@
     "Maud",
     "HTMX",
     "Vite",
+    "esbuild",
     "shadcn",
     "Zod",
     "dylib",

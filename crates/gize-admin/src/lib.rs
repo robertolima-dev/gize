@@ -39,6 +39,9 @@ pub fn package_json(project: &str) -> String {
     "@vitejs/plugin-react": "^4.3.2",
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
+  }},
+  "pnpm": {{
+    "onlyBuiltDependencies": ["esbuild"]
   }}
 }}
 "#
@@ -442,5 +445,12 @@ mod tests {
     #[test]
     fn package_json_uses_the_project_name() {
         assert!(package_json("blog").contains("\"name\": \"blog-admin\""));
+    }
+
+    #[test]
+    fn package_json_approves_esbuild_build_so_serve_works_without_pnpm_approve_builds() {
+        // pnpm v10 blocks dependency build scripts by default; whitelisting esbuild lets the
+        // first-run `pnpm install` build it, so `gize serve` works without `pnpm approve-builds`.
+        assert!(package_json("blog").contains("\"onlyBuiltDependencies\": [\"esbuild\"]"));
     }
 }
