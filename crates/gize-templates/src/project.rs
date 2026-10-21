@@ -35,7 +35,7 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 argon2 = {{ version = "0.5", features = ["std"] }}
-jsonwebtoken = "9"
+jsonwebtoken = {{ version = "10", default-features = false, features = ["rust_crypto"] }}
 validator = {{ version = "0.19", features = ["derive"] }}
 "#,
         driver = dialect.sqlx_feature(),
@@ -192,4 +192,19 @@ pub fn routes() -> Router<AppState> {
 }
 "#
     .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jwt_dependency_stays_within_the_msrv() {
+        // jsonwebtoken 9 pulls simple_asn1 0.6.4, whose `time` requirement needs Rust 1.88.
+        // With only `rust_crypto`, jsonwebtoken 10 needs neither, and declares rust-version 1.85.
+        let toml = cargo_toml("shop", Dialect::Postgres, false);
+        assert!(toml.contains(
+            r#"jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }"#
+        ));
+    }
 }

@@ -45,6 +45,9 @@ Gize's product is the CLI and the code it generates. The following are the cover
   change, documented in the changelog.
 - Generated projects target the same edition and pin their dependencies in a committed
   `Cargo.lock`.
+- CI checks both on Rust 1.85: the workspace with its lockfile, and freshly generated
+  PostgreSQL, SQLite and MySQL apps resolving their dependencies the way a first
+  `cargo build` does.
 
 ## Deprecation policy
 

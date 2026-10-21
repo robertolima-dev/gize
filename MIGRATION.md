@@ -152,6 +152,18 @@ If you wrote handlers of your own that hash or verify passwords, switch them to 
 helpers too. To change how many hashes run at once, edit `hashing_permits()` in
 `src/auth/mod.rs`.
 
+### → 0.9.3 — Rust 1.85 builds and MySQL foreign-key errors
+
+No API change. Two fixes you can adopt by hand without regenerating:
+
+- If a project must build on Rust 1.85 to 1.87, replace `jsonwebtoken = "9"` in its
+  `Cargo.toml` with
+  `jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }`.
+  The generated auth code compiles unchanged against it, and existing tokens stay valid.
+- On MySQL, add `1451 | 1216 | 1217` to the `1452` arm in each module's `error.rs` so deleting
+  a still-referenced row returns 409 instead of 500. `gize sync --force` regenerates these
+  files with the change.
+
 ## If an upgrade breaks something
 
 If `gize sync` proposes to overwrite a file you did **not** ask it to, or a compatible upgrade

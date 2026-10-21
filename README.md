@@ -585,8 +585,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
 
+To run a generated app against a real database end to end (the same script CI runs on SQLite,
+PostgreSQL 14/16 and MySQL 5.7/8.0):
+
+```bash
+cargo build -p gize
+GIZE=target/debug/gize DATABASE=sqlite scripts/e2e.sh
+GIZE=target/debug/gize DATABASE=postgres DATABASE_URL=postgres://user:pass@localhost/empty_db scripts/e2e.sh
+```
+
 CI (`.github/workflows/ci.yml`) enforces fmt + clippy (`-D warnings`) + tests on every push
-and PR.
+and PR, runs that end-to-end script on each database, and checks the Rust 1.85 MSRV.
 
 ## Roadmap
 

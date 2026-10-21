@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.3] - 2026-10-21
+
+### Fixed
+
+- **Generated apps build on Rust 1.85 again**, the MSRV in `STABILITY.md`. A fresh app failed
+  on 1.85: `jsonwebtoken 9` pulls `simple_asn1 0.6.4`, which declares no `rust-version` but
+  requires `time 0.3.47+` (Rust 1.88). Generated projects now depend on
+  `jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }`,
+  which declares Rust 1.85 and needs neither crate for HS256. No generated code changes.
+- **MySQL:** deleting a row that is still referenced (for example a user who still has posts)
+  returned 500 instead of 409. The generated error mapping now treats MySQL errors 1451 and
+  1217 (parent row still referenced) as foreign-key violations, alongside 1452 and 1216.
+
+### Added
+
+- `scripts/e2e.sh` generates an app, runs it against a real database and calls every route
+  (auth, pagination, constraints), then repeats generation and evolves the schema (add a field,
+  diff, backfill migration) and calls the routes again.
+- CI runs it on SQLite, PostgreSQL 14 and 16, and MySQL 5.7 and 8.0, and adds an MSRV job:
+  the workspace on Rust 1.85 with its lockfile, plus freshly generated apps for all three
+  databases resolving their dependencies on 1.85.
+
 ## [0.9.2] - 2026-10-21
 
 ### Fixed

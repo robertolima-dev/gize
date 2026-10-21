@@ -152,7 +152,8 @@ impl Dialect {
     ///
     /// Postgres and SQLite expose distinct codes through `.code()` (SQLSTATE / extended result
     /// code). MySQL collapses both to SQLSTATE `23000`, so it must read the numeric error code
-    /// (`1062` duplicate key, `1452` foreign key) off the concrete `MySqlDatabaseError`.
+    /// (`1062` duplicate key; `1451`, `1452`, `1216`, `1217` foreign key) off the concrete
+    /// `MySqlDatabaseError`.
     pub fn integrity_error_mapping(self) -> String {
         let inner = match self {
             // Postgres SQLSTATE; SQLite extended result codes (2067 unique, 787 foreign key).
@@ -175,7 +176,9 @@ impl Dialect {
                 "            if let Some(mysql) = db.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>() {",
                 "                match mysql.number() {",
                 "                    1062 => return Error::Conflict, // duplicate key",
-                "                    1452 => return Error::ForeignKey, // foreign-key violation",
+                // 1452/1216: a child row names a missing parent; 1451/1217: a parent row is
+                // still referenced (e.g. deleting a user who still has posts).
+                "                    1451 | 1452 | 1216 | 1217 => return Error::ForeignKey, // foreign-key violation",
                 "                    _ => {}",
                 "                }",
                 "            }",
@@ -247,7 +250,7 @@ mod tests {
         let mapping = d.integrity_error_mapping();
         assert!(mapping.contains("MySqlDatabaseError"));
         assert!(mapping.contains("1062 => return Error::Conflict"));
-        assert!(mapping.contains("1452 => return Error::ForeignKey"));
+        assert!(mapping.contains("1451 | 1452 | 1216 | 1217 => return Error::ForeignKey"));
     }
 
     #[test]

@@ -102,72 +102,101 @@ jobs:
       - name: Run generation benchmarks
         run: cargo bench -p gize-generator
 
-  e2e:
-    name: e2e · generate → migrate → serve → call routes (SQLite)
+  # Generated apps against real databases (scripts/e2e.sh): every route, auth, pagination,
+  # constraint mapping, repeated generation and a schema change with backfill. Runtime SQL
+  # errors fail here, not only compile errors. Run the same script locally with
+  # `GIZE=target/debug/gize DATABASE=sqlite scripts/e2e.sh`.
+  e2e-sqlite:
+    name: e2e · SQLite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p gize
+      - name: Generate, run and evolve an app
+        run: bash scripts/e2e.sh
+        env:
+          GIZE: target/debug/gize
+          DATABASE: sqlite
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+  e2e-postgres:
+    name: e2e · PostgreSQL ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["14", "16"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.version }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p gize
+      - name: Generate, run and evolve an app
+        run: bash scripts/e2e.sh
+        env:
+          GIZE: target/debug/gize
+          DATABASE: postgres
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/e2e
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+  e2e-mysql:
+    name: e2e · MySQL ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["5.7", "8.0"]
+    services:
+      mysql:
+        image: mysql:${{ matrix.version }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: e2e
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot" --health-interval 2s
+          --health-timeout 5s --health-retries 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p gize
+      - name: Generate, run and evolve an app
+        run: bash scripts/e2e.sh
+        env:
+          GIZE: target/debug/gize
+          DATABASE: mysql
+          DATABASE_URL: mysql://root:root@127.0.0.1:3306/e2e
 
-      - name: Build the gize CLI
-        run: cargo build -p gize
-
-      - name: Generate a SQLite app, run it, and exercise its routes
+  # The minimum supported Rust version promised in STABILITY.md. The workspace is checked with
+  # its committed lockfile; the generated app resolves its dependencies fresh, the way a user's
+  # first `cargo build` does, so a dependency that drops 1.85 support fails here.
+  msrv:
+    name: MSRV · Rust 1.85
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Workspace tests
+        run: cargo test --workspace --locked
+      - name: A freshly generated app builds and passes its tests
         run: |
           set -euo pipefail
+          cargo build -p gize
           GIZE="$PWD/target/debug/gize"
           WORK="$(mktemp -d)"; cd "$WORK"
-          "$GIZE" new blog --database sqlite
-          cd blog
-          "$GIZE" make crud Post title:String published:bool author:belongs_to:users
-          cat > .env <<EOF
-          DATABASE_URL=sqlite://blog.db?mode=rwc
-          PORT=8080
-          GIZE_JWT_SECRET=ci-secret
-          EOF
-          set -a; . ./.env; set +a
-          "$GIZE" migrate
-          # An admin is needed to exercise the admin-gated users routes (ADR-021).
-          ADMPW='adminpass123' "$GIZE" createadmin --email admin@x.com --name Admin --password-env ADMPW
-          cargo build
-          ./target/debug/blog & SRV=$!
-          trap 'kill $SRV 2>/dev/null || true' EXIT
-          # `posts` reads are public (generic resource), so use one as the readiness probe.
-          for i in $(seq 1 60); do curl -sf localhost:8080/posts >/dev/null 2>&1 && break; sleep 1; done
-          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-          token_of() { python3 -c "import sys,json;print(json.load(sys.stdin)['token'])"; }
-          # generic-resource writes require auth
-          [ "$(code -X POST localhost:8080/posts -d '{}')" = "401" ]
-          # register is public and returns a token (for a non-admin user)
-          TOKEN=$(curl -s -X POST localhost:8080/users/register -H 'content-type: application/json' \
-            -d '{"name":"Ada","email":"ada@x.com","password":"longenough","is_admin":false}' | token_of)
-          # the users resource is admin-gated end to end (ADR-021): reads are 401 without a token,
-          # 403 with a non-admin token, and 200 only for an admin. (HTTP codes are captured into
-          # variables first: nesting quoted JSON inside `[ "$(...)" ]` trips bash brace expansion.)
-          NOAUTH=$(code localhost:8080/users);                                     [ "$NOAUTH" = "401" ]
-          NONADMIN=$(code localhost:8080/users -H "authorization: Bearer $TOKEN");  [ "$NONADMIN" = "403" ]
-          ADMTOK=$(curl -s -X POST localhost:8080/users/login -H 'content-type: application/json' \
-            -d '{"email":"admin@x.com","password":"adminpass123"}' | token_of)
-          ADMIN=$(code localhost:8080/users -H "authorization: Bearer $ADMTOK");    [ "$ADMIN" = "200" ]
-          # an author id (read with the admin token) lets the non-admin user create a post.
-          # List routes return a page envelope {items, page, per_page, total} (ADR-022).
-          AUTHOR=$(curl -s localhost:8080/users -H "authorization: Bearer $ADMTOK" \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)['items'][0]['id'])")
-          POST_BODY="{\"title\":\"Hi\",\"published\":true,\"author_id\":\"$AUTHOR\"}"
-          CREATED=$(code -X POST localhost:8080/posts -H "authorization: Bearer $TOKEN" \
-            -H 'content-type: application/json' -d "$POST_BODY");                   [ "$CREATED" = "201" ]
-          # duplicate email is a 409 (SQLite unique violation mapped through the dialect seam)
-          [ "$(code -X POST localhost:8080/users/register -H 'content-type: application/json' \
-            -d '{"name":"B","email":"ada@x.com","password":"longenough","is_admin":false}')" = "409" ]
-          # list routes are paginated (ADR-022): the envelope reports the page and the total,
-          # and out-of-range paging parameters are a 422
-          PAGE=$(curl -s 'localhost:8080/posts?page=1&per_page=1' \
-            | python3 -c "import sys,json;d=json.load(sys.stdin);print(len(d['items']),d['page'],d['per_page'],d['total'])")
-          [ "$PAGE" = "1 1 1 1" ]
-          OVER=$(code 'localhost:8080/posts?per_page=101');                         [ "$OVER" = "422" ]
-          echo "e2e OK: users admin-gated (401/403/200), posts 401 unauth / 201 authed, 409 duplicate, paginated lists — SQLite app"
+          for db in postgres sqlite mysql; do
+            "$GIZE" new "app_$db" --database "$db" --openapi --ws
+            ( cd "app_$db" && "$GIZE" make crud Item name:String owner:belongs_to:users && cargo test )
+          done
