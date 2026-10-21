@@ -101,7 +101,9 @@ pub fn new_project(
 /// `gize.toml` (idempotently; ADR-004 / ADR-012).
 pub fn make_app(name: &str, flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
+    validate_generation_manifest()?;
     let module = snake_case(name);
+    gize_core::validation::validate_identifier(&module, "module")?;
 
     // 1. Generate the module's own files through the safe writer.
     let plan = scaffold::make_app(&module);
@@ -216,7 +218,11 @@ fn write_manifest(manifest: &Manifest, flags: GenFlags, what: &str) -> Result<()
 /// `gize make crud <Name> field:Type ...` — generate a full, wired CRUD resource.
 pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
+    validate_generation_manifest()?;
     let model = ModelSpec::parse(name, fields).context("invalid model definition")?;
+    model
+        .validate_for_dialect(project_dialect()?)
+        .context("invalid model definition")?;
     if model.fields.is_empty() {
         bail!(
             "`gize make crud` needs at least one field, e.g. \
@@ -225,7 +231,8 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     }
     let module = table_name(&model.name);
 
-    let plan = scaffold::make_crud(&model, project_dialect()?, &migration_timestamp());
+    let mut plan = scaffold::make_crud(&model, project_dialect()?, &migration_timestamp());
+    preserve_create_migration(Path::new("."), &module, &mut plan)?;
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating CRUD")?;
@@ -260,6 +267,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
 /// proxy, so the backend needs no CORS or other changes.
 pub fn make_admin(_name: Option<&str>, flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
+    validate_generation_manifest()?;
     let mut manifest =
         Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
     if manifest.modules.is_empty() {
@@ -303,8 +311,13 @@ pub fn make_admin(_name: Option<&str>, flags: GenFlags) -> Result<()> {
 /// project.
 pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
+    validate_generation_manifest()?;
     let model = ModelSpec::parse(name, fields).context("invalid model definition")?;
-    let plan = scaffold::make_model(&model, project_dialect()?, &migration_timestamp());
+    model
+        .validate_for_dialect(project_dialect()?)
+        .context("invalid model definition")?;
+    let mut plan = scaffold::make_model(&model, project_dialect()?, &migration_timestamp());
+    preserve_create_migration(Path::new("."), &table_name(&model.name), &mut plan)?;
     let report = Writer::new(flags.into())
         .apply(Path::new("."), &plan)
         .context("generating model")?;
@@ -355,30 +368,56 @@ fn make_blank_migration(name: &str, flags: GenFlags) -> Result<()> {
 
 /// Model-change diffing: reconcile each module's table to its `gize.toml` shape (ADR-011).
 fn make_diff_migrations(flags: GenFlags) -> Result<()> {
+    validate_generation_manifest()?;
     let manifest =
         Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    let dialect = Dialect::from_database(&manifest.stack.database);
     let dir = Path::new("migrations");
 
     let mut plan = Plan::new();
     let mut withheld_drops = 0usize;
+    let mut pending_backfills = 0usize;
+    let mut type_warnings = 0usize;
+    let history = diff::SchemaHistory::load(dir, dialect)?;
+    let mut missing_tables = 0usize;
     for module in &manifest.modules {
-        if module.fields.is_empty() {
-            continue; // no declared shape to diff (e.g. a bare `make app` module)
-        }
         let model = module.model_spec()?;
-        let Some(schema_diff) = diff::diff_model(dir, &module.name, &model)? else {
+        let Some(schema_diff) = history.diff(&module.name, &model) else {
+            if model.fields.is_empty() {
+                continue; // make app modules have neither fields/relations nor a table.
+            }
             println!(
-                "  skip    {} (no create migration yet — run `gize make crud`/`gize sync` first)",
+                "  skip    {} (table absent from migration history; scaffold a new resource or create a named migration to restore it)",
                 module.name
             );
+            missing_tables += 1;
             continue;
         };
+        for change in &schema_diff.changed {
+            println!(
+                "  warn    {}.{}: existing SQL type {} differs from generated default {}; preserving existing type. Verify Rust/SQL compatibility (including precision and timezone); use a named migration only if conversion is intended.",
+                module.name, change.name, change.from, change.to
+            );
+            type_warnings += 1;
+        }
+        for column in &schema_diff.nullable {
+            println!(
+                "  warn    {}.{column} allows NULL but the Rust field is required; backfill and add NOT NULL in a manual migration",
+                module.name
+            );
+            pending_backfills += 1;
+        }
         if schema_diff.is_empty() {
             continue;
         }
 
         for f in &schema_diff.added {
-            println!("  add     {}.{} {}", module.name, f.name, f.ty.sql_type());
+            println!(
+                "  add     {}.{} {}",
+                module.name,
+                f.name,
+                dialect.column_type(f.ty)
+            );
         }
         for c in &schema_diff.dropped {
             if flags.force {
@@ -398,13 +437,21 @@ fn make_diff_migrations(flags: GenFlags) -> Result<()> {
                     migration_timestamp(),
                     module.name
                 ),
-                diff::alter_sql(&module.name, &schema_diff, flags.force),
+                diff::alter_sql(&module.name, &schema_diff, dialect, flags.force),
             );
         }
     }
 
     if plan.is_empty() {
-        println!("Schema matches gize.toml — no model-change migrations to generate.");
+        if withheld_drops == 0
+            && pending_backfills == 0
+            && missing_tables == 0
+            && type_warnings == 0
+        {
+            println!("Schema matches gize.toml — no model-change migrations to generate.");
+        } else {
+            println!("No automatic migrations generated; review the warnings above.");
+        }
         if withheld_drops > 0 {
             println!(
                 "({withheld_drops} column drop(s) withheld — re-run with --force to emit them.)"
@@ -431,6 +478,7 @@ fn make_diff_migrations(flags: GenFlags) -> Result<()> {
 /// and left untouched unless `--force` is given; `--dry-run` previews without writing.
 pub fn sync(flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
+    validate_generation_manifest()?;
     let manifest =
         Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
 
@@ -445,6 +493,13 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     //    auth module is part of the skeleton the CRUD routes depend on, so reconcile it too.
     let mut plan = Plan::new().create("src/auth/mod.rs", scaffold::auth_mod_rs());
     for module in &manifest.modules {
+        if module.fields.is_empty()
+            && module.belongs_to.is_empty()
+            && !create_migration_exists(&module.name)?
+        {
+            plan = plan.extend(scaffold::make_app(&module.name));
+            continue;
+        }
         plan = plan.extend(
             scaffold::module_code(module, dialect)
                 .with_context(|| format!("planning module `{}`", module.name))?,
@@ -456,6 +511,9 @@ pub fn sync(flags: GenFlags) -> Result<()> {
     //    foreign key's target table is created before the table that references it (ADR-014).
     for module in manifest.modules_in_dependency_order()? {
         if !create_migration_exists(&module.name)? {
+            if module.fields.is_empty() && module.belongs_to.is_empty() {
+                continue;
+            }
             let sql = scaffold::module_migration_sql(module, dialect)?;
             plan = plan.create(
                 format!(
@@ -556,18 +614,42 @@ pub fn sync(flags: GenFlags) -> Result<()> {
 
 /// Whether a `*_create_<table>.sql` migration already exists under `migrations/`.
 fn create_migration_exists(table: &str) -> Result<bool> {
-    let dir = Path::new("migrations");
+    create_migration_exists_at(Path::new("."), table)
+}
+
+fn create_migration_exists_at(root: &Path, table: &str) -> Result<bool> {
+    let dir = root.join("migrations");
     if !dir.exists() {
         return Ok(false);
     }
     let suffix = format!("_create_{table}.sql");
     for entry in fs::read_dir(dir).context("reading migrations/")? {
-        let name = entry?.file_name();
-        if name.to_string_lossy().ends_with(&suffix) {
+        let entry = entry?;
+        let name = entry.file_name();
+        if entry.file_type()?.is_file() && name.to_string_lossy().ends_with(&suffix) {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// A timestamp makes a repeated CREATE look like a new file to Writer. Preserve the
+/// existing migration even under --force: applied SQL must never be regenerated.
+fn preserve_create_migration(root: &Path, table: &str, plan: &mut Plan) -> Result<()> {
+    if create_migration_exists_at(root, table)? {
+        let suffix = format!("_create_{table}.sql");
+        plan.ops.retain(|op| {
+            !(op.path.parent() == Some(Path::new("migrations"))
+                && op
+                    .path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().ends_with(&suffix)))
+        });
+        println!(
+            "  skip    CREATE TABLE {table} (migration already exists; for schema changes, update gize.toml and run `gize make migration`)"
+        );
+    }
+    Ok(())
 }
 
 /// `gize fmt` — format the project with rustfmt (thin wrapper; ADR-012).
@@ -942,10 +1024,15 @@ fn which(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn validate_generation_manifest() -> Result<()> {
+    Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?.validate()
+}
+
 fn ensure_in_project() -> Result<()> {
     if !Path::new("gize.toml").exists() {
         bail!("not a gize project (no gize.toml here). Run `gize new <name>` first.");
     }
+    Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
     Ok(())
 }
 
@@ -959,6 +1046,79 @@ fn project_dialect() -> Result<Dialect> {
 #[cfg(test)]
 mod tests {
     use super::{looks_like_email, resolve_run_targets, slugify};
+
+    #[test]
+    fn repeated_generation_preserves_create_migration() {
+        use super::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        // Exercise model -> model, crud -> crud, and model -> crud, including force
+        // and dry-run. Different stamps reproduce the CLI's repeated-invocation behavior.
+        for (first_crud, second_crud) in [(false, false), (true, true), (false, true)] {
+            for force in [false, true] {
+                let root = std::env::temp_dir().join(format!(
+                    "gize-repeat-{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+                fs::create_dir_all(&root).unwrap();
+                let model = ModelSpec::parse("Product", &["name:String".to_string()]).unwrap();
+                let make = |crud, stamp| {
+                    if crud {
+                        scaffold::make_crud(&model, Dialect::Sqlite, stamp)
+                    } else {
+                        scaffold::make_model(&model, Dialect::Sqlite, stamp)
+                    }
+                };
+                let mut first = make(first_crud, "001");
+                preserve_create_migration(&root, "products", &mut first).unwrap();
+                Writer::default().apply(&root, &first).unwrap();
+                let original_path = root.join("migrations/001_create_products.sql");
+                // A hand-edited/applied migration must survive even --force.
+                fs::write(&original_path, "-- preserved migration").unwrap();
+                let model_path = root.join("src/app/products/model.rs");
+                fs::write(&model_path, "// custom model").unwrap();
+
+                let mut second = make(second_crud, "002");
+                preserve_create_migration(&root, "products", &mut second).unwrap();
+                let preview = Writer::new(Options {
+                    force,
+                    dry_run: true,
+                    format: false,
+                })
+                .apply(&root, &second)
+                .unwrap();
+                assert!(!preview.created.iter().any(|p| p.ends_with(".sql")));
+                assert_eq!(fs::read_to_string(&model_path).unwrap(), "// custom model");
+                assert!(!root.join("migrations/002_create_products.sql").exists());
+                Writer::new(Options {
+                    force,
+                    ..Options::default()
+                })
+                .apply(&root, &second)
+                .unwrap();
+                assert_eq!(fs::read_dir(root.join("migrations")).unwrap().count(), 1);
+                assert_eq!(
+                    fs::read_to_string(original_path).unwrap(),
+                    "-- preserved migration"
+                );
+                if !force {
+                    assert_eq!(fs::read_to_string(model_path).unwrap(), "// custom model");
+                }
+                if second_crud {
+                    assert!(root.join("src/app/products/handler.rs").is_file());
+                }
+                // An unrelated resource still receives its initial migration.
+                let other = ModelSpec::parse("Order", &["total:i32".to_string()]).unwrap();
+                let mut other_plan = scaffold::make_model(&other, Dialect::Sqlite, "003");
+                preserve_create_migration(&root, "orders", &mut other_plan).unwrap();
+                Writer::default().apply(&root, &other_plan).unwrap();
+                assert!(root.join("migrations/003_create_orders.sql").is_file());
+                fs::remove_dir_all(root).unwrap();
+            }
+        }
+    }
 
     #[test]
     fn serve_targets_default_to_admin_only_when_available() {

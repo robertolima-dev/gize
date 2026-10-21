@@ -8,6 +8,7 @@ pub mod dialect;
 pub mod field;
 pub mod manifest;
 pub mod naming;
+pub mod validation;
 
 pub use dialect::Dialect;
 pub use field::{Field, FieldType, ModelSpec, Relation};

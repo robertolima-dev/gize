@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
-## [Unreleased]
+## [Unreleased] — targeting 0.9.0
+
+### Changed
+
+- **Breaking (generation only):** model and manifest validation is centralized in
+  `gize-core`. Invalid Rust identifiers, reserved SQL names for the selected database,
+  duplicate fields/modules, automatic fields and relationship-column collisions fail
+  before generation writes any files, including with `--force`. Existing manifests still
+  load for `migrate`, `serve` and `check`; generation may require correcting their names.
+  Code-only `make app` modules do not require a SQL table identifier. The reserved-word
+  lists are complete per database (measured against real PostgreSQL, MySQL and SQLite
+  servers; `scripts/probe_reserved_words.py`), so names such as `array` (PostgreSQL) or
+  `range` (MySQL) are now rejected instead of generating SQL the database refuses. The
+  error names the module to rename when an existing module blocks generation.
+
+### Fixed
+
+- Offline replay accepts `CREATE TYPE`, and `DROP TYPE`, `DROP FUNCTION` and `DROP TRIGGER`
+  without `CASCADE`. `DROP EXTENSION` and `ALTER TYPE` remain unsupported by sqlparser 0.53.
+- Common auxiliary SQL (extensions, views, functions, triggers, comments, grants and
+  constraints) no longer blocks schema diffing. Primary-key nullability is tracked.
+  Replay is shared across modules; code-only modules no longer report missing tables.
+  A dialect-aware `known_columns_for_dialect` helper handles MySQL quoted identifiers.
+- Model-change diffing now replays forward SQL migrations in numeric version order,
+  ignores `.down.sql`, and tracks drops, renames, type changes and nullability. Unsupported
+  SQL and duplicate versions stop the diff before writes. Type differences warn and preserve custom SQL types while independent changes proceed;
+  intended conversions use manual migrations; required Rust fields with nullable SQL columns produce backfill warnings.
+  Removing the last explicit field is now detected instead of skipped.
+- Internal Rust API: `diff_model` now takes `Dialect`; `SchemaDiff` also reports `changed`
+  types and `nullable` fields. SQL parsing uses `sqlparser` (ADR-011).
+- Model-change migrations now use the database selected in `gize.toml` for every
+  added column and the CLI preview. Backfill guidance uses PostgreSQL `ALTER COLUMN`,
+  MySQL `MODIFY COLUMN`, or a table rebuild for SQLite. Previously, all dialects
+  received PostgreSQL types and instructions. Review and regenerate any affected
+  **unapplied** ALTER migrations; do not edit migrations already applied to a database.
+- Internal Rust API: `gize_generator::diff::alter_sql` now accepts a `Dialect`
+  argument before `force`.
 
 ## [0.8.9] - 2026-07-13
 

@@ -84,3 +84,59 @@ Nanosecond stamps are unique, monotonic, and correctly ordered, so they stay.
 
 **Still not runtime auto-migration.** Diffing produces a reviewable `.sql` file; nothing is
 applied until `gize migrate`. The developer remains the owner of the DDL.
+
+## Revision (2026-10-20) — replay forward schema history
+
+Use `sqlparser` 0.53 with the selected database dialect to parse checked-in migrations.
+This dependency replaces substring/line matching, which cannot safely handle comments,
+quoted identifiers, expressions, or multiple statements. Version 0.53 resolves with the
+workspace's Rust 1.85 compatibility constraint; it adds no database connection or runtime
+dependency to generated applications. A hand-written SQL lexer was rejected because it would
+duplicate grammar maintenance and retain the original correctness risks.
+
+Replay forward migrations by numeric version, skipping `.down.sql` and rejecting duplicate
+versions. Maintain table/column names, SQL types and nullability through CREATE, ADD, DROP,
+column/table renames, PostgreSQL ALTER COLUMN and MySQL MODIFY/CHANGE COLUMN. Explicit
+CREATE/INSERT/DROP/RENAME rebuilds cover SQLite changes. SQL is parsed, never executed here.
+
+Unknown SQL or operations that cannot be modelled conservatively stop automatic diffing
+before any files are written, with the migration filename and statement context. This is a
+bounded schema interpreter, not a general SQL execution engine. Schema-qualified names,
+dynamic SQL, CREATE TABLE AS/LIKE, table/column CASCADE, and MySQL executable comments
+are currently unsupported. Unknown statements also stop replay when they concern another
+table, because their effects cannot safely be assumed local. Common auxiliary statements
+(CREATE EXTENSION/VIEW/FUNCTION/TRIGGER/TYPE, COMMENT, GRANT/REVOKE) are accepted without
+executing their bodies. ADD/DROP/RENAME CONSTRAINT are accepted: adding a primary key
+marks its columns required; dropping it preserves NOT NULL, as in PostgreSQL/MySQL.
+FK, CHECK and UNIQUE constraints do not change the tracked column metadata. Index changes, ordinary data
+INSERT/UPDATE/DELETE, BEGIN/COMMIT, and SQLite foreign-key PRAGMAs with numeric values
+(`foreign_keys = 0/1`, `defer_foreign_keys = 0/1`) do not change column shape. The selected
+parser version rejects bare ON/OFF PRAGMA values; use the equivalent numeric spelling.
+`DROP FUNCTION` and `DROP TRIGGER` are accepted without `CASCADE`; cascading drops
+remain rejected because dependent objects may change the tracked schema.
+`DROP TYPE` is accepted on the same terms (without `CASCADE`, the database refuses to drop a
+type a column still uses). `DROP EXTENSION` and `ALTER TYPE` (including the usual
+`ALTER TYPE ... ADD VALUE` for PostgreSQL enums) are not parsed by sqlparser 0.53 and
+therefore still block offline diff; keep enum changes out of the replayed history or
+generate later model changes with named migrations.
+Named manual migrations and `gize migrate` remain available for unsupported history.
+
+Type differences from generator defaults produce warnings for every module. Existing SQL
+types are preserved, including under `--force`; independent additions and removals can still
+be generated. VARCHAR lengths, timestamp timezones and numeric precision may be intentional,
+so a named conversion migration is required only when the developer wants to change them.
+Warnings do not certify Rust/SQL decoding compatibility. SQL aliases are normalized, but
+identical SQL representations (such as SQLite i32/i64) cannot be distinguished from SQL alone.
+Indexes, defaults and foreign-key constraints are not inferred from the manifest.
+
+Replay is loaded once per command into a shared immutable `SchemaHistory`. Modules without
+fields or relations and without a table are treated as code-only modules. A table that exists
+with no declared fields still has its last explicit columns considered for gated drops.
+`known_columns_for_dialect` supports dialect-specific callers; the legacy `known_columns`
+helper remains explicitly PostgreSQL-only. The next release is prepared as 0.9.0 because
+public Rust API signatures and struct fields changed; no publication is implied.
+
+Added columns stay nullable for populated-table safety. A subsequent diff warns when a
+required Rust field still maps to a nullable column; it does not repeat the ADD or claim full
+alignment. The developer must backfill and tighten the constraint (or rebuild on SQLite).
+Replay tracks the constraint, not the contents or completion of the backfill itself.

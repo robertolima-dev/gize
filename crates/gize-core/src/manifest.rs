@@ -127,6 +127,7 @@ impl Module {
     /// `gize sync` (ADR-009 revision). The struct name is derived from the module/table name
     /// (`posts` -> `Post`); the fields are re-parsed from their `name:Type` tokens.
     pub fn model_spec(&self) -> Result<ModelSpec> {
+        crate::validation::validate_identifier(&self.name, "module")?;
         // Feed the scalar field tokens plus a `name:belongs_to:target` token per relationship,
         // so `ModelSpec::parse` reconstructs the same fields (incl. FK columns) it produced
         // at `make crud` time.
@@ -186,13 +187,47 @@ impl Manifest {
             }
         }
         modules.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(Self {
+        let manifest = Self {
             project: raw.project,
             stack: raw.stack,
             features: raw.features,
             api: raw.api,
             modules,
-        })
+        };
+        Ok(manifest)
+    }
+
+    /// Validate every module before any consumer can write a partial generation plan.
+    pub fn validate(&self) -> Result<()> {
+        let mut names = std::collections::BTreeSet::new();
+        for module in &self.modules {
+            anyhow::ensure!(
+                names.insert(&module.name),
+                "duplicate module `{}`",
+                module.name
+            );
+            crate::validation::validate_identifier(&module.name, "module")?;
+            if !module.fields.is_empty() || !module.belongs_to.is_empty() {
+                let dialect = crate::Dialect::from_database(&self.stack.database);
+                // Every generation command validates the whole manifest, so an older module
+                // can block work on a new one: say which module and how to get unblocked.
+                crate::validation::validate_sql_identifier_for_dialect(
+                    &module.name,
+                    "table",
+                    dialect,
+                )
+                .and_then(|()| module.model_spec()?.validate_for_dialect(dialect))
+                .with_context(|| {
+                    format!(
+                        "module `{}` in gize.toml cannot be generated; rename the name reported \
+                         below in gize.toml (and rename an existing table/column with a named migration: \
+                         `gize make migration <name>`)",
+                        module.name
+                    )
+                })?;
+            }
+        }
+        Ok(())
     }
 
     /// Serialize the manifest to TOML text (always in the rich `[[module]]` form).
@@ -465,5 +500,22 @@ mod tests {
         let text = m.to_toml().unwrap();
         assert!(!text.contains("[[module]]"));
         assert!(!text.contains("[modules]"));
+    }
+    #[test]
+    fn loads_legacy_modules_but_rejects_invalid_generation() {
+        for body in [
+            "[[module]]\nname='posts'\nfields=['id:String']",
+            "[[module]]\nname='posts'\nfields=['name:String','name:i32']",
+            "[[module]]\nname='posts'\nfields=['author_id:Uuid']\n[[module.belongs_to]]\nfield='author'\ntarget='users'",
+            "[[module]]\nname='posts'\n[[module.belongs_to]]\nfield='author'\ntarget='../users'",
+            "[[module]]\nname='../posts'",
+            "[[module]]\nname='posts'\n[[module]]\nname='posts'",
+            "[modules]\nlist=['mod']",
+        ] {
+            let text = format!("[project]\nname='test'\n{body}");
+            let manifest = Manifest::from_toml(&text).unwrap();
+            assert!(manifest.validate().is_err(), "accepted {body}");
+            assert!(manifest.to_toml().is_ok());
+        }
     }
 }

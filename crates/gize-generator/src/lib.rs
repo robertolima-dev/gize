@@ -9,6 +9,7 @@ pub mod diff;
 pub mod plan;
 pub mod plugin;
 pub mod registry;
+mod schema;
 pub mod sync;
 pub mod writer;
 

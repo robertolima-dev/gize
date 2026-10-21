@@ -16,6 +16,35 @@ Field types: `String` (`str`), `bool`, `i32` (`int`), `i64` (`bigint`/`long`), `
 (`float`/`double`), `Uuid`, `DateTime` (`timestamp`); every model also gets `id`, `created_at`,
 `updated_at`.
 
+Names are validated before generation. Models use ASCII PascalCase (`BlogPost`);
+fields, relationship names/targets and manifest modules use lowercase ASCII identifiers
+(`first_name`, `author`, `users`). Digits are allowed after the first character and an
+initial underscore is allowed, but `_` alone, paths, spaces and raw Rust identifiers are
+rejected. SQL identifiers are limited to 63 bytes to avoid PostgreSQL truncation.
+Rust keywords and SQL names reserved for the selected database are rejected where they
+would be emitted. For example, `key` is allowed on PostgreSQL and SQLite, but not MySQL;
+`array` and `only` are rejected on PostgreSQL, `range` and `rows` on MySQL. The lists cover
+every keyword that breaks Gize's unquoted SQL on PostgreSQL 14+, MySQL 5.7/8.x and SQLite;
+`python3 scripts/probe_reserved_words.py` re-checks them against local servers.
+Code-only `make app user` does not require a SQL table identifier.
+
+Do not declare `id`, `created_at` or `updated_at`: Gize provides them. Field names must be
+unique, and `author:belongs_to:users` already supplies `author_id:Uuid`, so declaring that
+column separately is an error. Duplicate relationships and collisions between relationship
+names and fields are also rejected. Some model names (`String`, `Result`, `Error`, etc.)
+conflict with types used in generated code and are rejected with an explanation.
+
+The same checks apply to `gize.toml`, including duplicate module names. All modules are
+validated before writing files, even with `--force` or `--dry-run`. Existing manifests with
+invalid names remain readable by `migrate`, `serve` and `check`; strict validation applies
+to generation, not execution. Named manual migrations remain available as an escape hatch.
+Review any corresponding code/schema rename manually and do not rewrite applied migrations.
+
+Offline schema replay accepts enum declarations and drops of functions/triggers without
+`CASCADE`. `DROP EXTENSION` cannot be parsed by sqlparser 0.53 and still blocks automatic
+diffing; manually authored migrations can still be applied with `gize migrate`. Intentional
+type differences continue to warn on each diff; there is currently no acknowledgment setting.
+
 ## Add a field to an existing resource
 
 1. Add it to the module's `fields` in `gize.toml` (or re-run `make crud … --force` after editing).
@@ -34,6 +63,31 @@ Field types: `String` (`str`), `bool`, `i32` (`int`), `i64` (`bigint`/`long`), `
    ```
 
 Column **drops** are withheld unless you pass `--force` to `make migration`.
+
+After adding a column, review its generated backfill TODO before using the required Rust
+field against existing rows. Until the column is made `NOT NULL`, subsequent diffs warn
+about the mismatch without generating another ADD. Use `ALTER COLUMN ... SET NOT NULL`
+on PostgreSQL, `MODIFY COLUMN ... <type> NOT NULL` on MySQL, or an explicit table rebuild
+on SQLite after filling existing NULL values.
+
+For a **type difference**, `gize make migration` warns about the existing SQL type and the
+generator default, preserving the existing type even with `--force`. All modules are checked,
+and independent additions still proceed. Custom choices such as `VARCHAR(120)` can remain;
+verify Rust/SQL compatibility, especially timestamp timezones and numeric precision. If you
+intend a conversion, create a named migration:
+
+```sh
+gize make migration change_product_price_type
+# Edit the migration: review conversion, backfill and constraints for your database.
+gize make migration  # replays the manual change; warns if it still differs from the default
+gize migrate
+```
+
+Diffing replays forward migration files in numeric version order, ignoring `.down.sql`.
+Drops and explicit renames are remembered; removed columns can be reintroduced without
+repeating an old DROP. Unsupported SQL stops automatic diffing with the filename rather
+than assuming synchronization. Named migrations and `gize migrate` still work; see
+[the supported replay scope](../ADR/adr-011-migrations.md#revision-2026-10-20--replay-forward-schema-history).
 
 ## Add a relationship (belongs-to / 1-N)
 

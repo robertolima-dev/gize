@@ -1,6 +1,7 @@
 //! Model and field definitions parsed from the CLI (`name:String email:String ...`).
 
-use anyhow::{Context, Result, bail};
+use crate::validation::{validate_column, validate_identifier, validate_model_name};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 /// The set of scalar field types Gize understands in the MVP.
@@ -106,9 +107,7 @@ impl Field {
         let (name, ty) = token
             .split_once(':')
             .with_context(|| format!("field `{token}` must be in the form name:Type"))?;
-        if name.is_empty() {
-            bail!("field `{token}` has an empty name");
-        }
+        validate_column(name)?;
         Ok(Self {
             name: name.to_string(),
             ty: FieldType::parse(ty)?,
@@ -159,6 +158,8 @@ impl ModelSpec {
     /// `name:belongs_to:target` is parsed as a relationship; anything else is a scalar
     /// `name:Type` field.
     pub fn parse(name: impl Into<String>, tokens: &[String]) -> Result<Self> {
+        let name = name.into();
+        validate_model_name(&name)?;
         let mut fields = Vec::new();
         let mut relations = Vec::new();
         for token in tokens {
@@ -183,11 +184,72 @@ impl ModelSpec {
                 ty: FieldType::Uuid,
             });
         }
-        Ok(Self {
-            name: name.into(),
+        let model = Self {
+            name,
             fields,
             relations,
-        })
+        };
+        model.validate()?;
+        Ok(model)
+    }
+
+    /// Validate an expanded model, including specs assembled programmatically.
+    pub fn validate_for_dialect(&self, dialect: crate::Dialect) -> Result<()> {
+        self.validate()?;
+        let check = crate::validation::validate_sql_identifier_for_dialect;
+        check(
+            &crate::naming::table_name(&self.name),
+            "generated table",
+            dialect,
+        )?;
+        for field in &self.fields {
+            check(&field.name, "field", dialect)?;
+        }
+        for relation in &self.relations {
+            check(&relation.target, "relationship target", dialect)?;
+        }
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        use std::collections::BTreeSet;
+        validate_model_name(&self.name)?;
+        let mut names = BTreeSet::new();
+        for field in &self.fields {
+            validate_column(&field.name)?;
+            ensure!(
+                names.insert(field.name.as_str()),
+                "duplicate field `{}` in model `{}` (including generated relationship columns)",
+                field.name,
+                self.name
+            );
+        }
+        let mut relations = BTreeSet::new();
+        for relation in &self.relations {
+            validate_identifier(&relation.field, "relationship")?;
+            validate_identifier(&relation.target, "relationship target")?;
+            ensure!(
+                relations.insert(relation.field.as_str()),
+                "duplicate relationship `{}` in model `{}`",
+                relation.field,
+                self.name
+            );
+            ensure!(
+                !names.contains(relation.field.as_str()),
+                "relationship `{}` collides with a field in model `{}`",
+                relation.field,
+                self.name
+            );
+            let fk = relation.fk_column();
+            ensure!(
+                self.fields
+                    .iter()
+                    .any(|f| f.name == fk && f.ty == FieldType::Uuid),
+                "relationship `{}` requires generated UUID field `{fk}`",
+                relation.field
+            );
+        }
+        Ok(())
     }
 
     /// Serialize the scalar fields back into canonical `name:Type` tokens, for recording the
@@ -266,5 +328,80 @@ mod tests {
     fn rejects_malformed_relationship() {
         assert!(ModelSpec::parse("Post", &["author:belongs_to:".to_string()]).is_err());
         assert!(ModelSpec::parse("Post", &[":belongs_to:users".to_string()]).is_err());
+    }
+    #[test]
+    fn rejects_invalid_and_reserved_field_names() {
+        for name in [
+            "",
+            "_",
+            "9name",
+            "first-name",
+            "first name",
+            "Name",
+            "café",
+            "r#type",
+            "../field",
+            "type",
+            "async",
+            "gen",
+            "id",
+            "created_at",
+            "updated_at",
+        ] {
+            let error = Field::parse(&format!("{name}:String"))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(name), "{error}");
+        }
+        assert!(Field::parse(&format!("{}:String", "a".repeat(64))).is_err());
+        for name in ["name", "first_name", "address2", "_internal"] {
+            Field::parse(&format!("{name}:String")).unwrap();
+        }
+    }
+
+    #[test]
+    fn rejects_duplicates_and_relationship_collisions() {
+        for fields in [
+            vec!["name:String", "name:i32"],
+            vec!["author_id:Uuid", "author:belongs_to:users"],
+            vec!["author:belongs_to:users", "author_id:Uuid"],
+            vec!["author:belongs_to:users", "author:belongs_to:posts"],
+            vec!["author:String", "author:belongs_to:users"],
+            vec!["type:belongs_to:users"],
+            vec!["author:belongs_to:../users"],
+            vec!["author:belongs_to:users:extra"],
+        ] {
+            let tokens: Vec<_> = fields.iter().map(|f| f.to_string()).collect();
+            assert!(
+                ModelSpec::parse("Post", &tokens).is_err(),
+                "accepted {fields:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validates_models_and_preserves_valid_relation_roundtrip() {
+        for name in [
+            "",
+            "post",
+            "Self",
+            "String",
+            "Vec",
+            "../Post",
+            "Post-Item",
+            "Post Item",
+            "Post_Item",
+        ] {
+            assert!(ModelSpec::parse(name, &[]).is_err(), "accepted {name}");
+        }
+        let model = ModelSpec::parse(
+            "BlogPost",
+            &["title:String".into(), "user:belongs_to:users".into()],
+        )
+        .unwrap();
+        model.validate().unwrap();
+        let mut tokens = model.to_field_tokens();
+        tokens.extend(model.relations.iter().map(Relation::to_token));
+        assert_eq!(ModelSpec::parse("BlogPost", &tokens).unwrap(), model);
     }
 }
