@@ -63,10 +63,10 @@ pub struct User {
     .to_string()
 }
 
-/// `dto.rs` for users: the generic Create/Update payloads plus a `LoginRequest` and the
-/// `TokenResponse` returned by register/login.
+/// `dto.rs` for users: the generic Create/Update payloads, a `LoginRequest`, the
+/// `TokenResponse` returned by register/login, and the list pagination types (ADR-022).
 pub fn dto_rs() -> String {
-    r#"use serde::{Deserialize, Serialize};
+    let dto = r#"use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 /// Payload to create a `User`. `password` is plaintext on the wire and hashed before storage.
@@ -107,8 +107,8 @@ pub struct LoginRequest {
 pub struct TokenResponse {
     pub token: String,
 }
-"#
-    .to_string()
+"#;
+    format!("{dto}{}", crate::crud::PAGINATION_DTO)
 }
 
 /// `error.rs` for users: the generic errors plus `Unauthorized` (bad credentials) and
@@ -183,21 +183,28 @@ impl IntoResponse for Error {
 /// public `register` and `login` handlers that issue a token (ADR-013).
 pub fn handler_rs(dialect: Dialect) -> String {
     r#"use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Extension;
 
 use validator::Validate;
 
-use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
+use super::dto::{CreateUser, ListParams, LoginRequest, Page, TokenResponse, UpdateUser};
 use super::error::Error;
 use super::model::User;
 use super::service;
 use crate::auth::{hash_password, issue_token, verify_password, Claims};
 use crate::state::AppState;
 
-pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
-    Ok(Json(service::list(&state.db).await?))
+/// `GET /users?page=&per_page=` (admin only). Invalid paging parameters are a 422.
+pub async fn list(
+    State(state): State<AppState>,
+    params: Result<Query<ListParams>, QueryRejection>,
+) -> Result<Json<Page<User>>, Error> {
+    let Query(params) = params.map_err(|rejection| Error::Validation(rejection.body_text()))?;
+    let (page, per_page) = params.resolve().map_err(Error::Validation)?;
+    Ok(Json(service::list(&state.db, page, per_page).await?))
 }
 
 /// Self-service: return the authenticated caller's own record. The user is identified by the
@@ -420,6 +427,14 @@ mod tests {
         // …and reads of arbitrary users stay behind the admin guard (ADR-021).
         assert!(out.contains("middleware::from_fn(require_admin)"));
         assert!(out.contains("get(handler::list).post(handler::create)"));
+    }
+
+    #[test]
+    fn users_list_is_paginated() {
+        assert!(dto_rs().contains("pub struct Page<T>"));
+        let out = handler_rs(Dialect::Postgres);
+        assert!(out.contains("Result<Json<Page<User>>, Error>"));
+        assert!(out.contains("params.resolve()"));
     }
 
     #[test]

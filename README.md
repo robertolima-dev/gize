@@ -162,7 +162,7 @@ curl -X POST localhost:8080/products \
   -d '{"name":"Widget","price":1299,"active":true}'
 # → {"id":"…","name":"Widget","price":1299,"active":true,"created_at":"…","updated_at":"…"}
 
-curl localhost:8080/products            # list
+curl 'localhost:8080/products?page=1&per_page=25'   # list → {items, page, per_page, total}
 curl localhost:8080/products/<id>       # show
 curl -X PUT localhost:8080/products/<id> \
   -H 'content-type: application/json' \

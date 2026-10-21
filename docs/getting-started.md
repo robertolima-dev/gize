@@ -99,7 +99,7 @@ curl -s -X POST localhost:8080/users/register -H 'content-type: application/json
 curl -s -X POST localhost:8080/users/login -H 'content-type: application/json' \
   -d '{"email":"ada@example.com","password":"longenough"}'
 
-# public: reads on a generic resource
+# public: reads on a generic resource (paginated: ?page=&per_page=, ADR-022)
 curl -s localhost:8080/posts
 
 # writes require a token — grab one from register/login, then:

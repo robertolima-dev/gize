@@ -58,6 +58,7 @@ pub fn spec_json(manifest: &Manifest) -> Result<Value> {
         // `users` hides `password` in responses (it holds a hash; see the generated model).
         let hidden: &[&str] = if table == "users" { &["password"] } else { &[] };
         schemas.insert(name.clone(), model_response_schema(&model, hidden));
+        schemas.insert(format!("{name}Page"), page_schema(name));
         schemas.insert(format!("Create{name}"), dto_schema(&model));
         schemas.insert(format!("Update{name}"), dto_schema(&model));
 
@@ -149,6 +150,38 @@ fn token_response_schema() -> Value {
     json!({ "type": "object", "properties": { "token": { "type": "string" } }, "required": ["token"] })
 }
 
+/// The page envelope a list route returns (ADR-022).
+fn page_schema(name: &str) -> Value {
+    json!({
+        "type": "object",
+        "required": ["items", "page", "per_page", "total"],
+        "properties": {
+            "items": { "type": "array", "items": schema_ref(name) },
+            "page": { "type": "integer", "format": "int32", "minimum": 1 },
+            "per_page": { "type": "integer", "format": "int32", "minimum": 1, "maximum": 100 },
+            "total": { "type": "integer", "format": "int64", "minimum": 0 }
+        }
+    })
+}
+
+/// The `page` / `per_page` query parameters of a list route (ADR-022).
+fn page_params() -> Value {
+    json!([
+        {
+            "name": "page", "in": "query", "required": false,
+            "description": "1-based page number.",
+            "schema": { "type": "integer", "format": "int32", "minimum": 1, "default": 1 }
+        },
+        {
+            "name": "per_page", "in": "query", "required": false,
+            "description": "Items per page.",
+            "schema": {
+                "type": "integer", "format": "int32", "minimum": 1, "maximum": 100, "default": 25
+            }
+        }
+    ])
+}
+
 fn schema_ref(name: &str) -> Value {
     json!({ "$ref": format!("#/components/schemas/{name}") })
 }
@@ -178,8 +211,10 @@ fn collection_path(table: &str, name: &str, guard_reads: bool) -> Value {
     let mut get_op = json!({
         "tags": [table],
         "summary": format!("List {table}"),
+        "parameters": page_params(),
         "responses": {
-            "200": json_content(json!({ "type": "array", "items": schema_ref(name) }))
+            "200": json_content(schema_ref(&format!("{name}Page"))),
+            "422": { "description": "invalid page or per_page" }
         }
     });
     let mut post_op = json!({
@@ -363,6 +398,31 @@ mod tests {
                 ["$ref"],
             "#/components/schemas/User"
         );
+    }
+
+    #[test]
+    fn list_routes_document_the_page_envelope() {
+        let spec = spec_json(&blog_manifest()).unwrap();
+        let list = &spec["paths"]["/posts"]["get"];
+        let names: Vec<_> = list["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["page", "per_page"]);
+        assert_eq!(list["parameters"][1]["schema"]["maximum"], 100);
+        assert_eq!(
+            list["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/PostPage"
+        );
+        assert!(list["responses"].get("422").is_some());
+        let page = &spec["components"]["schemas"]["PostPage"];
+        assert_eq!(
+            page["properties"]["items"]["items"]["$ref"],
+            "#/components/schemas/Post"
+        );
+        assert!(spec["components"]["schemas"].get("UserPage").is_some());
     }
 
     #[test]

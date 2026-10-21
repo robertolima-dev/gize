@@ -1,19 +1,26 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Extension;
 
 use validator::Validate;
 
-use super::dto::{CreateUser, LoginRequest, TokenResponse, UpdateUser};
+use super::dto::{CreateUser, ListParams, LoginRequest, Page, TokenResponse, UpdateUser};
 use super::error::Error;
 use super::model::User;
 use super::service;
 use crate::auth::{hash_password, issue_token, verify_password, Claims};
 use crate::state::AppState;
 
-pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<User>>, Error> {
-    Ok(Json(service::list(&state.db).await?))
+/// `GET /users?page=&per_page=` (admin only). Invalid paging parameters are a 422.
+pub async fn list(
+    State(state): State<AppState>,
+    params: Result<Query<ListParams>, QueryRejection>,
+) -> Result<Json<Page<User>>, Error> {
+    let Query(params) = params.map_err(|rejection| Error::Validation(rejection.body_text()))?;
+    let (page, per_page) = params.resolve().map_err(Error::Validation)?;
+    Ok(Json(service::list(&state.db, page, per_page).await?))
 }
 
 /// Self-service: return the authenticated caller's own record. The user is identified by the

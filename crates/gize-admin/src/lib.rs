@@ -253,8 +253,22 @@ async function req(path: string, opts: RequestInit = {}): Promise<any> {
   return res.json();
 }
 
+/** Largest page the API serves (ADR-022). */
+const PER_PAGE = 100;
+
+/** Every row of a resource: pages of PER_PAGE until the last one, so search, filters and
+ * foreign-key selects can keep working on the full list in the browser. */
+async function listAll(path: string): Promise<any[]> {
+  const rows: any[] = [];
+  for (let page = 1; ; page++) {
+    const res = await req(`/${path}?page=${page}&per_page=${PER_PAGE}`);
+    rows.push(...res.items);
+    if (res.items.length < PER_PAGE || rows.length >= res.total) return rows;
+  }
+}
+
 export const api = {
-  list: (path: string): Promise<any[]> => req(`/${path}`),
+  list: listAll,
   get: (path: string, id: string) => req(`/${path}/${id}`),
   create: (path: string, body: unknown) =>
     req(`/${path}`, { method: "POST", body: JSON.stringify(body) }),
@@ -440,6 +454,14 @@ mod tests {
         assert!(ts.contains("password: z.string().min(8)"));
         // the FK column is a uuid field carrying its ref target.
         assert!(ts.contains("{ name: \"author_id\", kind: \"uuid\", ref: \"users\" }"));
+    }
+
+    #[test]
+    fn api_client_walks_every_page() {
+        let out = api_ts();
+        assert!(out.contains("const PER_PAGE = 100;"));
+        assert!(out.contains("?page=${page}&per_page=${PER_PAGE}"));
+        assert!(out.contains("list: listAll,"));
     }
 
     #[test]

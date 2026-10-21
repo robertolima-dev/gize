@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.1] - 2026-10-21
+
+### Changed
+
+- **Breaking (generated code and API clients):** generated list routes are paginated
+  ([ADR-022](./ADR/adr-022-pagination.md)). `GET /<table>` accepts `?page=` (1-based, default 1)
+  and `?per_page=` (default 25, maximum 100) and returns
+  `{ "items": [...], "page": 1, "per_page": 25, "total": 130 }` instead of a bare array. Invalid
+  values return **422**. The same applies to the built-in `GET /users`. Rows are ordered by
+  `created_at DESC, id DESC`, so pages stay stable when timestamps tie (previously the order of
+  rows with equal `created_at` was unspecified). Existing projects keep their code until they
+  regenerate it; see `MIGRATION.md`.
+- The pagination types (`ListParams`, `Page<T>`, `DEFAULT_PER_PAGE`, `MAX_PER_PAGE`) are
+  generated in each module's `dto.rs`, and the repository gains a `count` function.
+- The OpenAPI spec documents the `page`/`per_page` query parameters, a `<Name>Page` schema per
+  resource and the 422 response of list routes.
+- The generated admin loads lists in pages of 100 until it has every row, so search, filters and
+  foreign-key selects keep working on the full list.
+
 ## [0.9.0] - 2026-10-21
 
 ### Changed

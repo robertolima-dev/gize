@@ -3,9 +3,20 @@ use sqlx::PgPool;
 use super::dto::{CreateProduct, UpdateProduct};
 use super::model::Product;
 
-pub async fn list(pool: &PgPool) -> Result<Vec<Product>, sqlx::Error> {
-    sqlx::query_as::<_, Product>("SELECT * FROM products ORDER BY created_at DESC")
-        .fetch_all(pool)
+/// One page of rows, newest first. `id` breaks ties so the order is stable across pages.
+pub async fn list(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Product>, sqlx::Error> {
+    sqlx::query_as::<_, Product>(
+        "SELECT * FROM products ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM products")
+        .fetch_one(pool)
         .await
 }
 

@@ -102,6 +102,32 @@ If you regenerate the `users` slice (`gize sync --force` on `src/app/users/*` an
 
 See [`SECURITY.md`](./SECURITY.md) for the full authorization model.
 
+### → 0.9.1 — paginated list routes ([ADR-022](./ADR/adr-022-pagination.md))
+
+`GET /<table>` (and `GET /users`) now returns a page object instead of every row as an array:
+
+```json
+{ "items": [ ... ], "page": 1, "per_page": 25, "total": 130 }
+```
+
+It accepts `?page=` (1-based) and `?per_page=` (1 to 100, default 25); anything else is a
+**422**. Rows come back ordered by `created_at DESC, id DESC`.
+
+Nothing changes in an existing project until you regenerate it. To adopt pagination in a
+module, regenerate its `dto.rs`, `repository.rs`, `service.rs` and `handler.rs` (for `users`,
+the same four files under `src/app/users/`) with `gize sync --force`, then reconcile any hand
+edits from your git diff. Afterwards:
+
+- Update API clients to read `items` from the response, and to request further pages when
+  `total` is larger than `per_page`.
+- If the project has an admin, regenerate `admin/src/api.ts` in the same step: the new admin
+  expects the page object and the old one expects an array. `gize sync --force` already
+  rewrites it; `gize make admin --force` does the same on its own.
+- `openapi.json` is refreshed by `sync` from the manifest, so it documents the new parameters.
+
+Keeping the unpaginated routes is a supported choice: leave those files as they are and `sync`
+will report them as drift without touching them.
+
 ## If an upgrade breaks something
 
 If `gize sync` proposes to overwrite a file you did **not** ask it to, or a compatible upgrade

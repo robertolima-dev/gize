@@ -77,28 +77,66 @@ pub use routes::routes;
     )
 }
 
-/// `dto.rs`: create/update request payloads.
+/// The list-pagination types appended to every module's `dto.rs` (ADR-022). They live in each
+/// module, not in a shared file, so `make crud` also works in projects generated before them.
+pub(crate) const PAGINATION_DTO: &str = r#"
+/// Default and maximum page sizes for `GET` list routes (ADR-022).
+pub const DEFAULT_PER_PAGE: u32 = 25;
+pub const MAX_PER_PAGE: u32 = 100;
+
+/// Query parameters of a list route: `?page=<1-based>&per_page=<1..=100>`.
+#[derive(Debug, Deserialize)]
+pub struct ListParams {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+}
+
+impl ListParams {
+    /// Apply the defaults and reject out-of-range values. Returns `(page, per_page)`.
+    pub fn resolve(&self) -> Result<(u32, u32), String> {
+        let page = self.page.unwrap_or(1);
+        let per_page = self.per_page.unwrap_or(DEFAULT_PER_PAGE);
+        if page == 0 {
+            return Err("page must be at least 1".to_string());
+        }
+        if per_page == 0 || per_page > MAX_PER_PAGE {
+            return Err(format!("per_page must be between 1 and {MAX_PER_PAGE}"));
+        }
+        Ok((page, per_page))
+    }
+}
+
+/// One page of a list route. `total` counts every row, not only this page.
+#[derive(Debug, Serialize)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    pub page: u32,
+    pub per_page: u32,
+    pub total: u64,
+}
+"#;
+
+/// `dto.rs`: create/update request payloads plus the list pagination types.
 pub fn dto_rs(model: &ModelSpec) -> String {
     let fields = dto_fields(model);
-    base(
-        r#"use serde::Deserialize;
+    let template = format!(
+        r#"use serde::{{Deserialize, Serialize}};
 use validator::Validate;
 
 /// Payload to create a `__NAME__`.
 #[derive(Debug, Deserialize, Validate)]
-pub struct Create__NAME__ {
+pub struct Create__NAME__ {{
 __FIELDS__
-}
+}}
 
 /// Payload to update a `__NAME__`.
 #[derive(Debug, Deserialize, Validate)]
-pub struct Update__NAME__ {
+pub struct Update__NAME__ {{
 __FIELDS__
-}
-"#,
-        model,
-    )
-    .replace("__FIELDS__", &fields)
+}}
+{PAGINATION_DTO}"#
+    );
+    base(&template, model).replace("__FIELDS__", &fields)
 }
 
 /// `error.rs`: a typed error that maps to HTTP responses. The `dialect` chooses the
@@ -273,9 +311,20 @@ pub fn repository_rs(model: &ModelSpec, dialect: Dialect) -> String {
 use super::dto::{Create__NAME__, Update__NAME__};
 use super::model::__NAME__;
 
-pub async fn list(pool: &__POOL__) -> Result<Vec<__NAME__>, sqlx::Error> {
-    sqlx::query_as::<_, __NAME__>("SELECT * FROM __TABLE__ ORDER BY created_at DESC")
-        .fetch_all(pool)
+/// One page of rows, newest first. `id` breaks ties so the order is stable across pages.
+pub async fn list(pool: &__POOL__, limit: i64, offset: i64) -> Result<Vec<__NAME__>, sqlx::Error> {
+    sqlx::query_as::<_, __NAME__>(
+        "SELECT * FROM __TABLE__ ORDER BY created_at DESC, id DESC LIMIT __P1__ OFFSET __P2__",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count(pool: &__POOL__) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM __TABLE__")
+        .fetch_one(pool)
         .await
 }
 
@@ -307,6 +356,7 @@ pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), sqlx::Error> 
     base(&assembled, model)
         .replace("__POOL__", dialect.pool_type())
         .replace("__P1__", &dialect.placeholder(1))
+        .replace("__P2__", &dialect.placeholder(2))
         .replace("__NOW__", dialect.now_expr())
 }
 
@@ -315,13 +365,24 @@ pub fn service_rs(model: &ModelSpec, dialect: Dialect) -> String {
     base(
         r#"use sqlx::__POOL__;
 
-use super::dto::{Create__NAME__, Update__NAME__};
+use super::dto::{Create__NAME__, Page, Update__NAME__};
 use super::error::Error;
 use super::model::__NAME__;
 use super::repository;
 
-pub async fn list(pool: &__POOL__) -> Result<Vec<__NAME__>, Error> {
-    repository::list(pool).await.map_err(Error::from)
+/// One page of `__TABLE__` plus the total row count (ADR-022). `page` is 1-based.
+pub async fn list(pool: &__POOL__, page: u32, per_page: u32) -> Result<Page<__NAME__>, Error> {
+    let offset = i64::from(page - 1) * i64::from(per_page);
+    let items = repository::list(pool, i64::from(per_page), offset)
+        .await
+        .map_err(Error::from)?;
+    let total = repository::count(pool).await.map_err(Error::from)?;
+    Ok(Page {
+        items,
+        page,
+        per_page,
+        total: u64::try_from(total).unwrap_or_default(),
+    })
 }
 
 pub async fn find(pool: &__POOL__, id: uuid::Uuid) -> Result<__NAME__, Error> {
@@ -353,19 +414,25 @@ pub async fn delete(pool: &__POOL__, id: uuid::Uuid) -> Result<(), Error> {
 pub fn handler_rs(model: &ModelSpec) -> String {
     base(
         r#"use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use validator::Validate;
 
-use super::dto::{Create__NAME__, Update__NAME__};
+use super::dto::{Create__NAME__, ListParams, Page, Update__NAME__};
 use super::error::Error;
 use super::model::__NAME__;
 use super::service;
 use crate::state::AppState;
 
-pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<__NAME__>>, Error> {
-    let items = service::list(&state.db).await?;
-    Ok(Json(items))
+/// `GET /__TABLE__?page=&per_page=`. Invalid paging parameters are a 422, like other input.
+pub async fn list(
+    State(state): State<AppState>,
+    params: Result<Query<ListParams>, QueryRejection>,
+) -> Result<Json<Page<__NAME__>>, Error> {
+    let Query(params) = params.map_err(|rejection| Error::Validation(rejection.body_text()))?;
+    let (page, per_page) = params.resolve().map_err(Error::Validation)?;
+    Ok(Json(service::list(&state.db, page, per_page).await?))
 }
 
 pub async fn show(
@@ -507,9 +574,38 @@ mod tests {
     }
 
     #[test]
+    fn dto_carries_the_pagination_contract() {
+        let out = dto_rs(&product());
+        assert!(out.contains("use serde::{Deserialize, Serialize};"));
+        assert!(out.contains("pub const DEFAULT_PER_PAGE: u32 = 25;"));
+        assert!(out.contains("pub const MAX_PER_PAGE: u32 = 100;"));
+        assert!(out.contains("pub struct ListParams"));
+        assert!(out.contains("pub struct Page<T>"));
+    }
+
+    #[test]
+    fn list_is_paged_with_a_stable_order_in_every_dialect() {
+        for (dialect, limit) in [
+            (Dialect::Postgres, "LIMIT $1 OFFSET $2"),
+            (Dialect::Sqlite, "LIMIT ?1 OFFSET ?2"),
+            (Dialect::MySql, "LIMIT ? OFFSET ?"),
+        ] {
+            let out = repository_rs(&product(), dialect);
+            assert!(
+                out.contains(&format!(
+                    "SELECT * FROM products ORDER BY created_at DESC, id DESC {limit}"
+                )),
+                "{dialect:?}"
+            );
+            assert!(out.contains("SELECT COUNT(*) FROM products"));
+        }
+    }
+
+    #[test]
     fn handler_and_routes_reference_resource() {
         let handler = handler_rs(&product());
-        assert!(handler.contains("Json<Vec<Product>>"));
+        assert!(handler.contains("Json<Page<Product>>"));
+        assert!(handler.contains("params.resolve()"));
         let routes = routes_rs(&product());
         assert!(routes.contains("\"/products\""));
         assert!(routes.contains("\"/products/:id\""));

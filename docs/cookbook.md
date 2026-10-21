@@ -219,6 +219,23 @@ pub struct CreateProduct {
 Validation failures return **422** with field messages; a unique-constraint violation returns
 **409**, a missing/again-referenced FK also **409**.
 
+## Page through a list
+
+Every generated list route is paginated ([ADR-022](../ADR/adr-022-pagination.md)):
+
+```sh
+curl 'localhost:8080/products?page=2&per_page=50'
+# → {"items":[...],"page":2,"per_page":50,"total":137}
+```
+
+`page` starts at 1 and defaults to 1; `per_page` defaults to 25 and accepts up to 100. Out-of-range
+or non-numeric values return **422**. Rows are ordered newest first (`created_at DESC, id DESC`),
+so the order stays stable from page to page. A page past the end returns an empty `items` with
+the real `total`.
+
+To change the limits for one resource, edit `DEFAULT_PER_PAGE` / `MAX_PER_PAGE` in its `dto.rs`.
+To sort or filter differently, edit the query in its `repository.rs`; the code is yours.
+
 ## Rebuild a project from the manifest
 
 Deleted a module's code, or cloned a repo that only committed `gize.toml`?
