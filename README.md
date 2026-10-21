@@ -107,8 +107,10 @@ v2.0).
 **From crates.io:**
 
 ```bash
-cargo install gize   # installs the `gize` binary
+cargo install gize --locked   # installs the `gize` binary
 ```
+
+`--locked` uses the dependency versions Gize was tested with; without it, Cargo picks the newest ones, which can require a newer Rust than 1.85.
 
 **From source:**
 

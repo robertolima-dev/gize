@@ -31,8 +31,8 @@ the new templates for two reasons:
 2. **Upgrade the CLI.**
 
    ```sh
-   cargo install gize --force          # latest
-   cargo install gize --version X.Y.Z  # or pin a version
+   cargo install gize --locked --force          # latest
+   cargo install gize --locked --version X.Y.Z  # or pin a version
    gize --version                      # confirm
    ```
 
@@ -163,6 +163,30 @@ No API change. Two fixes you can adopt by hand without regenerating:
 - On MySQL, add `1451 | 1216 | 1217` to the `1452` arm in each module's `error.rs` so deleting
   a still-referenced row returns 409 instead of 500. `gize sync --force` regenerates these
   files with the change.
+
+### → 0.9.4 — install with `--locked`; MySQL timestamps; `belongs_to` order
+
+- Install and upgrade with `cargo install gize --locked`. Without `--locked` the install can
+  fail on Rust older than the newest dependencies require.
+- `gize make crud` / `make model` now refuse a `belongs_to` whose target is not in `gize.toml`.
+  Generate the referenced resource first. Projects that already have such a migration order
+  are not changed by this; if `gize migrate` fails with a missing referenced table, rename the
+  dependent migration file so its timestamp comes after the referenced table's migration
+  (only for migrations that were never applied).
+- **MySQL only.** New tables store `created_at` / `updated_at` with microseconds. To upgrade
+  an existing table, add a named migration per table and regenerate `repository.rs` so updates
+  use `NOW(6)`:
+
+  ```sql
+  ALTER TABLE posts
+    MODIFY created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    MODIFY updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6);
+  ```
+
+  Existing rows keep their whole-second values. Without this, everything still works; only
+  the order of rows created within the same second is arbitrary.
+- If the project has an admin, `gize sync --force` (or `gize make admin --force`) picks up the
+  label fixes.
 
 ## If an upgrade breaks something
 

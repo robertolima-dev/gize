@@ -16,6 +16,16 @@ pub enum Dialect {
     MySql,
 }
 
+impl std::fmt::Display for Dialect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Dialect::Postgres => "PostgreSQL",
+            Dialect::Sqlite => "SQLite",
+            Dialect::MySql => "MySQL",
+        })
+    }
+}
+
 impl Dialect {
     /// Pick the dialect from the manifest's `stack.database` (`"sqlite"` → SQLite,
     /// `"mysql"` → MySQL, else the Postgres default).
@@ -86,7 +96,9 @@ impl Dialect {
             Dialect::Postgres => "TIMESTAMPTZ NOT NULL DEFAULT now()",
             // RFC-3339 with a `Z` so sqlx decodes it straight into `DateTime<Utc>`.
             Dialect::Sqlite => "TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
-            Dialect::MySql => "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            // Microseconds, like Postgres: a plain DATETIME keeps whole seconds, so rows created
+            // in the same second would tie and "newest first" (ADR-022) would not hold.
+            Dialect::MySql => "DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)",
         }
     }
 
@@ -95,7 +107,7 @@ impl Dialect {
         match self {
             Dialect::Postgres => "now()",
             Dialect::Sqlite => "strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-            Dialect::MySql => "now()",
+            Dialect::MySql => "NOW(6)",
         }
     }
 

@@ -274,3 +274,52 @@ fn serve_and_check_reach_cargo_with_legacy_names() {
         );
     }
 }
+
+#[test]
+fn belongs_to_a_module_that_does_not_exist_yet_is_rejected_before_writing() {
+    // Generating `tickets` before `orders` would order its migration first, and `gize migrate`
+    // would fail on the missing referenced table.
+    let project = Project::new("missing-target");
+    for command in ["crud", "model"] {
+        for extra in [&[][..], &["--force"][..], &["--dry-run"][..]] {
+            let mut args = vec![
+                "make",
+                command,
+                "Ticket",
+                "code:String",
+                "order:belongs_to:orders",
+            ];
+            args.extend_from_slice(extra);
+            project.reject_without_changes(&args, "`orders`, which is not in gize.toml yet");
+        }
+    }
+
+    // Once the target exists the same command works, and a model may reference its own table.
+    let make = |args: &[&str]| {
+        let result = Command::new(env!("CARGO_BIN_EXE_gize"))
+            .current_dir(project.root())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    make(&["make", "crud", "Order", "total_cents:i64"]);
+    make(&[
+        "make",
+        "crud",
+        "Ticket",
+        "code:String",
+        "order:belongs_to:orders",
+    ]);
+    make(&[
+        "make",
+        "crud",
+        "Category",
+        "name:String",
+        "parent:belongs_to:categories",
+    ]);
+}

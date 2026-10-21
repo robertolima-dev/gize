@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, labelOf, titleCase } from "./api";
+import { api, labelOf, nounOf, titleCase } from "./api";
 import { Icon } from "./icons";
 import { toast } from "./toast";
 import type { FieldDesc, ResourceDesc } from "./resources";
@@ -119,7 +119,7 @@ export function Resource({
         <span className="spacer" />
         <button className="btn primary" onClick={onAdd}>
           <Icon name="plus" />
-          Add {desc.name.toLowerCase()}
+          Add {nounOf(desc.name)}
         </button>
       </div>
 

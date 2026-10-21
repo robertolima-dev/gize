@@ -14,9 +14,11 @@ see the [Cookbook](./cookbook.md); for how it all fits together see the
 - The Gize CLI:
 
   ```sh
-  cargo install gize
+  cargo install gize --locked
   gize --version
   ```
+
+  `--locked` uses the dependency versions Gize was tested with; without it, Cargo picks the newest ones, which can require a newer Rust than 1.85.
 
 ## 1. Scaffold a project
 

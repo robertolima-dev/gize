@@ -22,10 +22,11 @@ This crate provides the `gize` command-line binary. It orchestrates the rest of 
 ## Installation
 
 ```bash
-cargo install gize
+cargo install gize --locked
 ```
 
-Requires Rust **1.85+** (edition 2024). Generated apps run on **PostgreSQL** or **SQLite**.
+Requires Rust **1.85+** (edition 2024). `--locked` uses the dependency versions Gize was tested with; without it, Cargo picks the newest ones, which can require a newer Rust than 1.85. Generated apps run on **PostgreSQL**, **SQLite** or
+**MySQL**.
 
 ## Quickstart
 

@@ -491,7 +491,7 @@ pub fn validate_sql_identifier_for_dialect(
     };
     ensure!(
         !reserved.contains(&name),
-        "invalid {kind} `{name}`: reserved SQL keyword for {dialect:?}; choose another name"
+        "invalid {kind} `{name}`: reserved SQL keyword for {dialect}; choose another name"
     );
     Ok(())
 }

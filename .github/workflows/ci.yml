@@ -190,6 +190,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Workspace tests
         run: cargo test --workspace --locked
+      # What a user runs. Without --locked, `cargo install` ignores rust-version and picks the
+      # newest dependencies, which can need a newer Rust; the documented command must work.
+      - name: Install the CLI the documented way
+        run: cargo install --locked --path crates/gize --root "$RUNNER_TEMP/gize-install"
       - name: A freshly generated app builds and passes its tests
         run: |
           set -euo pipefail

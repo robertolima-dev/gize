@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.4] - 2026-10-21
+
+Fixes found by building a complete ticket-sales API with the published 0.9.3 on PostgreSQL,
+MySQL and SQLite.
+
+### Fixed
+
+- **Installing on Rust 1.85 to 1.88 failed.** `cargo install gize` ignores `rust-version` when
+  it resolves dependencies, so it picked `uuid 1.28` (Rust 1.89) and stopped. Every install
+  instruction now uses `cargo install gize --locked`, which uses the dependency versions Gize
+  was tested with, and the MSRV CI job installs the CLI that way on Rust 1.85.
+- **`belongs_to` a resource that does not exist yet.** `gize make crud Ticket
+  order:belongs_to:orders` before `orders` existed was accepted; creating `Order` afterwards gave
+  its migration a later timestamp, so `gize migrate` failed with `relation "orders" does not
+  exist`. `make crud` and `make model` now reject a target that is not in `gize.toml` before
+  writing anything and say which resource to generate first. A model can still reference its
+  own table.
+- **MySQL: `created_at` / `updated_at` kept whole seconds.** Rows created in the same second
+  tied, so "newest first" (ADR-022) did not hold and returned timestamps were truncated. New
+  MySQL tables use `DATETIME(6)` with `CURRENT_TIMESTAMP(6)`, and updates set `NOW(6)`.
+  Existing tables keep working; see `MIGRATION.md` to upgrade them. User `DateTime` fields are
+  unchanged.
+- **Admin labels:** multi-word resources read as words ("Ticket types", "Add ticket type"
+  instead of "Ticket_types", "Add tickettype"), foreign-key fields show the required marker,
+  and an unselected foreign key says "Choose one" instead of "Invalid uuid".
+- Reserved-word errors name the database properly ("MySQL", "PostgreSQL", "SQLite").
+
+### Changed
+
+- `scripts/e2e.sh` also checks that lists come back newest first, which catches the MySQL
+  timestamp precision in CI.
+
 ## [0.9.3] - 2026-10-21
 
 ### Fixed

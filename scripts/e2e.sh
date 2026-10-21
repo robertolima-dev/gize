@@ -93,6 +93,11 @@ expect "unknown author (foreign key)" "$(code -X POST "$BASE/posts" -H "$AUTH" -
   -d '{"title":"x","published":true,"author_id":"00000000-0000-0000-0000-000000000000"}')" 409
 BODY=$(post_body "" true)
 expect "empty title (validation)" "$(code -X POST "$BASE/posts" -H "$AUTH" -H "$J" -d "$BODY")" 422
+# Created a moment apart, so the default order must be newest first (ADR-022). A timestamp
+# without sub-second precision would tie them and fall back to the random id.
+expect "newest first" \
+  "$(curl -s "$BASE/posts" | json "' | '.join(p['title'] for p in d['items'])")" \
+  "Post 3 | Post 2 | Post 1"
 expect "page 1 of 2 per page (items, total)" \
   "$(curl -s "$BASE/posts?per_page=2" | json "len(d['items']), d['total']")" "2 3"
 expect "page 2 of 2 per page" "$(curl -s "$BASE/posts?page=2&per_page=2" | json "len(d['items'])")" 1

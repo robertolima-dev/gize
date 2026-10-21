@@ -279,9 +279,16 @@ export const api = {
     req(`/users/login`, { method: "POST", body: JSON.stringify({ email, password }) }),
 };
 
-/** A resource's display label: the (plural) path, capitalized — e.g. "posts" -> "Posts". */
+/** A resource's display label: the (plural) path in words, capitalized — e.g.
+ * "posts" -> "Posts", "ticket_types" -> "Ticket types". */
 export function titleCase(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+  const words = s.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A model name as a lowercase noun for buttons and dialogs — e.g. "TicketType" -> "ticket type". */
+export function nounOf(model: string): string {
+  return model.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
 }
 
 /** A readable label for a related record (used by foreign-key selects and cells). */
@@ -346,7 +353,13 @@ pub fn resources_ts(manifest: &Manifest) -> anyhow::Result<String> {
                 "      {{ name: \"{}\", kind: \"{kind}\"{ref_ts} }},\n",
                 f.name
             ));
-            schema_ts.push_str(&format!("      {}: {},\n", f.name, zod_for(kind)));
+            // A foreign key is a required select: say so instead of zod's "Invalid uuid".
+            let zod = if ref_target.is_some() {
+                "z.string().uuid(\"Choose one\")"
+            } else {
+                zod_for(kind)
+            };
+            schema_ts.push_str(&format!("      {}: {zod},\n", f.name));
         }
 
         entries.push_str(&format!(
@@ -462,6 +475,15 @@ mod tests {
         assert!(out.contains("const PER_PAGE = 100;"));
         assert!(out.contains("?page=${page}&per_page=${PER_PAGE}"));
         assert!(out.contains("list: listAll,"));
+    }
+
+    #[test]
+    fn labels_read_as_words_and_foreign_keys_explain_themselves() {
+        let api = api_ts();
+        assert!(api.contains(r#"s.replace(/_/g, " ")"#));
+        assert!(api.contains("export function nounOf(model: string)"));
+        let ts = resources_ts(&manifest()).unwrap();
+        assert!(ts.contains(r#"author_id: z.string().uuid("Choose one"),"#));
     }
 
     #[test]

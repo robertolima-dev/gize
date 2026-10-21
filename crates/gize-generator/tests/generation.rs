@@ -223,7 +223,7 @@ fn mysql_project_uses_binary_uuid_and_no_returning() {
         fs::read_to_string(root.join(format!("migrations/{TS}_create_users.sql"))).unwrap();
     assert!(migration.contains("id BINARY(16) PRIMARY KEY"));
     assert!(migration.contains("email VARCHAR(255) NOT NULL UNIQUE"));
-    assert!(migration.contains("created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"));
+    assert!(migration.contains("created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"));
 
     let repo = fs::read_to_string(root.join("src/app/users/repository.rs")).unwrap();
     assert!(!repo.contains("RETURNING"), "MySQL must not use RETURNING");

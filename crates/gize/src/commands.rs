@@ -215,6 +215,30 @@ fn write_manifest(manifest: &Manifest, flags: GenFlags, what: &str) -> Result<()
     Ok(())
 }
 
+/// A `belongs_to` target must already be a module: its `CREATE TABLE` migration has to run
+/// before this one, and migrations apply in timestamp order. Without this check the new
+/// migration references a table that is created later and `gize migrate` fails. A model may
+/// reference its own table.
+fn ensure_relation_targets_exist(model: &ModelSpec) -> Result<()> {
+    let manifest =
+        Manifest::from_toml(&fs::read_to_string("gize.toml").context("reading gize.toml")?)?;
+    let own_table = table_name(&model.name);
+    for relation in &model.relations {
+        let known = relation.target == own_table
+            || manifest.modules.iter().any(|m| m.name == relation.target);
+        if !known {
+            bail!(
+                "`{field}:belongs_to:{target}` refers to `{target}`, which is not in gize.toml yet. \
+                 Generate the `{target}` resource first (for example with `gize make crud`), so \
+                 its table is created before `{own_table}`.",
+                field = relation.field,
+                target = relation.target,
+            );
+        }
+    }
+    Ok(())
+}
+
 /// `gize make crud <Name> field:Type ...` — generate a full, wired CRUD resource.
 pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     ensure_in_project()?;
@@ -229,6 +253,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
              `gize make crud Product name:String price:i32`"
         );
     }
+    ensure_relation_targets_exist(&model)?;
     let module = table_name(&model.name);
 
     let mut plan = scaffold::make_crud(&model, project_dialect()?, &migration_timestamp());
@@ -316,6 +341,7 @@ pub fn make_model(name: &str, fields: &[String], flags: GenFlags) -> Result<()> 
     model
         .validate_for_dialect(project_dialect()?)
         .context("invalid model definition")?;
+    ensure_relation_targets_exist(&model)?;
     let mut plan = scaffold::make_model(&model, project_dialect()?, &migration_timestamp());
     preserve_create_migration(Path::new("."), &table_name(&model.name), &mut plan)?;
     let report = Writer::new(flags.into())

@@ -81,7 +81,7 @@ get the `require_auth` guard for writes.
 
 ## How do I upgrade Gize?
 
-`cargo install gize --force`, then `gize sync --dry-run` to preview and reconcile any drift. The
+`cargo install gize --locked --force`, then `gize sync --dry-run` to preview and reconcile any drift. The
 full flow, including how hand edits survive, is in **[MIGRATION.md](../MIGRATION.md)**.
 
 ## Does the OpenAPI spec drift from my routes?

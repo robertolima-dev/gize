@@ -1,7 +1,7 @@
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, labelOf } from "./api";
+import { api, labelOf, nounOf } from "./api";
 import { Icon } from "./icons";
 import { toast } from "./toast";
 import type { FieldDesc, ResourceDesc } from "./resources";
@@ -90,7 +90,7 @@ export function ResourceForm({
     });
   }
 
-  const noun = desc.name.toLowerCase();
+  const noun = nounOf(desc.name);
 
   return (
     <aside className="drawer show" role="dialog" aria-modal="true" aria-label={`${editing ? "Edit" : "Add"} ${noun}`}>
@@ -142,7 +142,7 @@ export function ResourceForm({
                   <>
                     <label>
                       {f.name}
-                      {f.kind !== "uuid" && <span className="req"> *</span>}
+                      <span className="req"> *</span>
                     </label>
                     {f.kind === "uuid" && f.ref ? (
                       <Controller
