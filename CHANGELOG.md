@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.5] - 2026-10-21
+
+Documentation only; no change to the CLI or generated code.
+
+### Added
+
+- `CONTRIBUTING.md`: development setup, the end-to-end and snapshot tests, pull requests, and
+  the issue triage process (labels, priorities, a 7-day first-response goal).
+- `SUPPORT.md`: where to get help and which versions are supported. From 1.0, bug fixes go to
+  the latest 1.x minor and security fixes also to the previous minor for 3 months.
+- The issue chooser links to private security reporting.
+
+### Changed
+
+- The README, roadmap, stability policy and crate READMEs describe the current state: release
+  candidate 0.9.x, three databases, which crates are real and which only hold a name, and what
+  remains before 1.0 (an outside validation report). Crate README snippets point at `0.9`.
+
 ## [0.9.4] - 2026-10-21
 
 Fixes found by building a complete ticket-sales API with the published 0.9.3 on PostgreSQL,

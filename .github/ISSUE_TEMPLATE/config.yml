@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Security vulnerability
+    url: https://github.com/robertolima-dev/gize/security/advisories/new
+    about: Report it privately. Please do not open a public issue (see SECURITY.md).
   - name: Usage question
     url: https://github.com/robertolima-dev/gize/blob/main/docs/faq.md
     about: Check the FAQ, Getting Started, and Cookbook first — most questions are answered there.

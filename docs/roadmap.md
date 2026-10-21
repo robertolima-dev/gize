@@ -91,8 +91,10 @@ validates and matches routes; at least one external plugin builds against the AP
 
 ## Phase 4 — RC (months 12–15)
 
-**Status: In progress (v0.8.x).** Entered at v0.8.0: the 1.0 feature set is **frozen** (new
-frameworks such as Actix move to v2.0) and the project is hardening the existing surface.
+**Status: Nearly done (0.8.0–0.9.x).** Entered at v0.8.0: the 1.0 feature set is **frozen** (new
+frameworks such as Actix move to v2.0) and the project is hardening the existing surface. Every
+item below has shipped; the one open acceptance criterion is a non-core team shipping an app on
+the RC ([`docs/validation.md`](./validation.md)).
 
 **Objective:** Stabilize. Freeze public APIs and generated-code contracts. Harden.
 
@@ -102,11 +104,17 @@ frameworks such as Actix move to v2.0) and the project is hardening the existing
 - [x] API/codegen stability guarantees and a deprecation policy — see [`STABILITY.md`](../STABILITY.md).
 - [x] Generated-code contract enforced in CI: apps across every dialect + feature are
       rustfmt-clean and type-check (ADR-020).
-- [ ] Upgrade/migration guide between Gize versions (regen-safe templates).
+- [x] Upgrade/migration guide between Gize versions (regen-safe templates) — see
+      [`MIGRATION.md`](../MIGRATION.md) (0.8.4).
 - [x] Performance benchmarks + regression gates in CI — criterion benches for the generation
       paths, plus a coarse budget test that fails on catastrophic slowdowns.
 - [x] Security review (auth, generated SQL, admin) — see [`SECURITY.md`](../SECURITY.md).
-- [ ] Complete docs: Getting Started, Architecture, Cookbook, FAQ, Migration Guide.
+- [x] Complete docs: Getting Started, Architecture, Cookbook, FAQ, Migration Guide (0.8.5).
+- [x] Hardening found by building real apps on the RC (0.9.x): paginated list routes (ADR-022),
+      Argon2 off the async runtime, CI against real PostgreSQL/MySQL/SQLite and the Rust 1.85
+      MSRV, MySQL fixes, `cargo install --locked`.
+- [x] Contribution guide, issue triage and a support statement:
+      [`CONTRIBUTING.md`](../CONTRIBUTING.md), [`SUPPORT.md`](../SUPPORT.md) (0.9.5).
 
 **Risks:**
 - Backward-compat lock-in too early. → mark unstable surfaces explicitly.
@@ -118,15 +126,19 @@ and security review pass; a non-core team ships an app on the RC.
 
 ## Phase 5 — v1.0 (months 15–18)
 
+**Status: Next.** Most of it is already in place during the RC; 1.0.0 itself turns the promise on.
+
 **Objective:** Production-ready 1.0 with a stability promise.
 
 **Dependencies:** RC hardening complete.
 
 **Features:**
-- Semantic-versioning stability guarantee for CLI + generated-code contracts.
-- Published crates on crates.io; installable CLI.
-- Polished website, examples gallery, contribution guide.
-- LTS-style support statement.
+- Semantic-versioning stability guarantee for CLI + generated-code contracts
+  ([`STABILITY.md`](../STABILITY.md)).
+- [x] Published crates on crates.io; installable CLI (`cargo install gize --locked`).
+- Polished website, examples gallery; [x] contribution guide ([`CONTRIBUTING.md`](../CONTRIBUTING.md)).
+- [x] Support statement: bug fixes on the latest 1.x minor, security fixes also on the previous
+  minor for 3 months ([`SUPPORT.md`](../SUPPORT.md)).
 
 **Risks:**
 - Ecosystem expectations exceeding capacity. → clear scope + roadmap for v2.
@@ -142,7 +154,6 @@ docs; issue/triage process in place.
 
 **Candidate features (subject to ADRs):**
 - Alternative framework target (Actix) via `gize-core` seam.
-- Additional databases as first-class (MySQL, SQLite).
 - Background jobs & events (`jobs/`, `events/`) as first-class generators.
 - gRPC / GraphQL surfaces.
 - Marketplace of community plugins and templates.

@@ -26,7 +26,9 @@ surface; the rest are implementation detail ([STABILITY.md](../STABILITY.md)).
 | `gize-db` | The SQLx migrator ([ADR-003](../ADR/adr-003-data-layer.md)). |
 | `gize-openapi` | OpenAPI 3.0 spec generation from the manifest ([ADR-010](../ADR/adr-010-openapi.md)). |
 | `gize-admin` | The generated admin SPA shell ([ADR-006](../ADR/adr-006-admin.md)). |
-| `gize-auth`, `gize-macros`, `gize-testing` | Placeholders / support (auth lives in templates per [ADR-013](../ADR/adr-013-auth.md)). |
+| `gize-testing` | Helpers to run a generated app against a throwaway SQLite database in tests. |
+| `gize-macros` | Reserved; no macros are exported ([ADR-007](../ADR/adr-007-macros.md)). |
+| `gize-auth` | Unpublished name holder: auth is generated into each project ([ADR-013](../ADR/adr-013-auth.md)). |
 
 ### The generation pipeline
 

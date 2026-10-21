@@ -20,7 +20,7 @@ step with the manifest.
 
 ```toml
 [dependencies]
-gize-openapi = "0.7"
+gize-openapi = "0.9"
 ```
 
 ```rust

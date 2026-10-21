@@ -41,7 +41,7 @@
 
 ```toml
 [dependencies]
-gize-generator = "0.7"
+gize-generator = "0.9"
 ```
 
 ## Part of the Gize workspace

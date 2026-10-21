@@ -24,7 +24,7 @@ The database-specific SQL (column types, primary keys, placeholders) is generate
 
 ```toml
 [dependencies]
-gize-db = "0.7"
+gize-db = "0.9"
 ```
 
 ## Part of the Gize workspace

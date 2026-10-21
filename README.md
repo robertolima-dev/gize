@@ -9,7 +9,7 @@ without giving up Rust's guarantees, performance, or transparency.
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Status](https://img.shields.io/badge/status-MVP-yellow.svg)](#project-status)
+[![Status](https://img.shields.io/badge/status-release%20candidate-orange.svg)](#project-status)
 
 </div>
 
@@ -73,12 +73,14 @@ What you get is normal Rust you can read and edit: Gize writes the boring 80%, y
 
 ## Project status
 
-**Release Candidate (v0.8.x).** The Beta feature set (Admin UI, OpenAPI, multi-database, plugin
-API) is complete and the **1.0 feature set is frozen** — the project is now hardening rather than
-adding features. See [`STABILITY.md`](./STABILITY.md) for what is stable and the deprecation
-policy, [`SECURITY.md`](./SECURITY.md) for the generated apps' security model, and the
-[roadmap](./docs/roadmap.md) for what remains before 1.0 (benchmarks, docs). New frameworks such
-as Actix are planned for v2.0.
+**Release candidate (0.9.x).** Every 1.0 feature is in, and the 1.0 feature set has been frozen
+since 0.8.0: releases now harden what exists instead of adding to it. What remains before 1.0.0
+is outside validation: someone outside the core team building an app on the release candidate
+([`docs/validation.md`](./docs/validation.md)). New frameworks such as Actix are planned for v2.0.
+
+See [`STABILITY.md`](./STABILITY.md) for what is stable and the deprecation policy,
+[`SUPPORT.md`](./SUPPORT.md) for supported versions and where to get help, and
+[`SECURITY.md`](./SECURITY.md) for the generated apps' security model.
 
 | Command | State | What it does |
 | --- | --- | --- |
@@ -96,11 +98,10 @@ as Actix are planned for v2.0.
 | `gize doctor` | ✅ | Diagnose environment/project |
 | `gize <plugin>` | ✅ | Run a `gize-<name>` plugin (plugin API v0) |
 
-New in Beta: **`gize make admin`** (Vite + React + TS SPA, data-driven from the manifest),
-**OpenAPI** generation (`--openapi` → `/openapi.json` + `/docs`), **SQLite** behind a database
-seam (`gize new --database sqlite`), and a **plugin API** (`gize-<name>` subcommands). See
-[`docs/roadmap.md`](./docs/roadmap.md) for the full plan (MVP → Alpha → Beta → RC → v1.0 →
-v2.0).
+Generated apps run on **PostgreSQL**, **MySQL** or **SQLite**, with paginated list routes,
+Argon2id + JWT auth, an optional OpenAPI spec, a React admin and a WebSocket endpoint. See
+[`docs/roadmap.md`](./docs/roadmap.md) for how each phase got here (MVP → Alpha → Beta → RC →
+v1.0 → v2.0).
 
 ## Installation
 
@@ -460,8 +461,7 @@ proc-macros).
 ## The `gize.toml` manifest
 
 The declarative source of truth for a project's shape ([ADR-009](./ADR/adr-009-configuration.md)).
-It drives the (planned) `gize sync` and is updated automatically by `make app` / `make
-crud`. It never holds secrets: those live in the environment.
+It drives `gize sync` and is updated automatically by `make app` / `make crud`. It never holds secrets: those live in the environment.
 
 ```toml
 [project]
@@ -554,9 +554,14 @@ gize ──> gize-generator ──> gize-templates ──┐
 | `gize-generator` | Codegen engine: pure `Plan`s, the safe `Writer`, idempotent registry edits. |
 | `gize-templates` | The templates for generated projects, modules, models, and CRUD. |
 | `gize-db` | Data-layer conventions + the SQLx migration runner. |
-| `gize-macros` | Procedural macros (intentionally tiny; see ADR-007). |
+| `gize-openapi` | OpenAPI 3.0 spec generated from the manifest ([ADR-010](./ADR/adr-010-openapi.md)). |
+| `gize-admin` | The generated React admin SPA ([ADR-006](./ADR/adr-006-admin.md)). |
+| `gize-testing` | Helpers to run a generated app against a throwaway SQLite database in tests. |
+| `gize-macros` | Reserved: no macros are exported; Gize prefers generated source ([ADR-007](./ADR/adr-007-macros.md)). |
 | `gize` | The `gize` binary (clap). Orchestrates the above. |
-| `gize-admin`, `gize-auth`, `gize-openapi`, `gize-testing` | Planned feature crates (placeholders today). |
+
+Auth is generated into each project (`src/auth`) rather than shipped as a library
+([ADR-013](./ADR/adr-013-auth.md)); the unpublished `gize-auth` crate only holds the name.
 
 Design decisions live in [`ADR/`](./ADR). Guides live in [`docs/`](./docs):
 
@@ -565,6 +570,7 @@ Design decisions live in [`ADR/`](./ADR). Guides live in [`docs/`](./docs):
 - [Cookbook](./docs/cookbook.md) — task-sized recipes (relationships, auth, OpenAPI, admin, …).
 - [FAQ](./docs/faq.md) — is it an ORM, does it lock me in, is the auth production-ready, …
 - [Migration guide](./MIGRATION.md) · [Stability policy](./STABILITY.md) · [Security](./SECURITY.md)
+- [Support](./SUPPORT.md) · [Contributing](./CONTRIBUTING.md)
 - [Vision](./docs/vision.md) · [MVP](./docs/mvp.md) · [Roadmap](./docs/roadmap.md)
 
 ## Examples
@@ -601,10 +607,13 @@ and PR, runs that end-to-end script on each database, and checks the Rust 1.85 M
 
 ## Roadmap
 
-- **MVP** (now): project + module + model + CRUD generators, migrations, serve.
-- **Alpha**: `gize sync`, auth scaffolding, relationships, validation, migration diffing.
-- **Beta**: admin UI (`gize make admin`), OpenAPI generation, a plugin API.
-- **RC → v1.0**: API/codegen stability, benchmarks, security review, complete docs.
+- **MVP** (0.5, done): project + module + model + CRUD generators, migrations, serve.
+- **Alpha** (0.6, done): `gize sync`, auth scaffolding, relationships, validation, migration diffing.
+- **Beta** (0.7, done): admin UI, OpenAPI, SQLite and MySQL, a plugin API.
+- **RC** (0.8–0.9, now): stability policy, security review, benchmarks, complete docs, pagination,
+  CI against real databases. Remaining: an outside validation report.
+- **v1.0**: the Semantic Versioning promise for the CLI, `gize.toml` and generated code.
+- **v2.0**: new surfaces such as an Actix backend, behind their own ADRs.
 
 Full detail with acceptance criteria in [`docs/roadmap.md`](./docs/roadmap.md).
 
@@ -621,10 +630,10 @@ See [`docs/vision.md`](./docs/vision.md) for the detailed comparison.
 
 ## Contributing
 
-Contributions are welcome. Because Gize is decision-driven, please open an ADR (or discuss
-one) for anything architectural before implementing; see
-[ADR-000](./ADR/adr-000-process.md) for the process. Keep `cargo fmt`, `cargo clippy -D
-warnings`, and `cargo test` green.
+Contributions are welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the development setup,
+the end-to-end tests, pull requests and how issues are triaged. Gize is decision-driven: open an
+ADR (or discuss one) before implementing anything architectural
+([ADR-000](./ADR/adr-000-process.md)).
 
 ## License
 

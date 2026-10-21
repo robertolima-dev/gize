@@ -20,7 +20,7 @@ Bring your own HTTP client for the assertions.
 
 ```toml
 [dev-dependencies]
-gize-testing = "0.7"
+gize-testing = "0.9"
 ```
 
 ```rust

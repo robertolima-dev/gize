@@ -1,2 +1,2 @@
-//! Authentication scaffolding for Gize (planned for the Alpha phase; see the roadmap).
-//! Placeholder so the crate participates in the workspace.
+//! Reserved name, not published. Gize generates authentication into each project
+//! (`src/auth`, from `gize-templates`) instead of shipping it as a library; see ADR-013.

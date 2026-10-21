@@ -17,8 +17,8 @@ the CLI; it only defines the shared vocabulary the rest of the workspace builds 
 - **Naming conventions**: pluralization and snake/Pascal case helpers so `User` maps to the
   `users` table (and back) consistently across every generator.
 
-This crate is the abstraction seam that keeps alternative targets feasible (for example a
-second database or a future non-Axum backend). See
+This crate is the abstraction seam behind the three supported databases (PostgreSQL, MySQL and
+SQLite) and what keeps a future non-Axum backend feasible. See
 [ADR-001](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-001-workspace.md) and
 [ADR-015](https://github.com/robertolima-dev/gize/blob/main/ADR/adr-015-second-database.md).
 
@@ -26,7 +26,7 @@ second database or a future non-Axum backend). See
 
 ```toml
 [dependencies]
-gize-core = "0.7"
+gize-core = "0.9"
 ```
 
 ```rust

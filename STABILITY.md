@@ -62,10 +62,15 @@ Gize's product is the CLI and the code it generates. The following are the cover
 
 ## Feature freeze (1.0 line)
 
-As of v0.8.0 the 1.0 feature set is **frozen**. RC releases (0.8.x) harden the existing surface —
-security review, benchmarks, migration/regeneration safety, and documentation — rather than add
-features. New capabilities that would change the stable surface (for example an **Actix Web**
+As of v0.8.0 the 1.0 feature set is **frozen**. RC releases (0.8.x and 0.9.x) harden the existing
+surface — security review, benchmarks, migration/regeneration safety, CI against real databases,
+and documentation — rather than add features. New capabilities that would change the stable surface (for example an **Actix Web**
 backend) are planned for **v2.0** ([roadmap](./docs/roadmap.md)).
+
+## Supported versions
+
+From 1.0, bug fixes go to the latest 1.x minor, and security fixes also go to the previous minor
+for 3 months after the next one is released. [`SUPPORT.md`](./SUPPORT.md) has the full table.
 
 ## How to report a stability concern
 

@@ -8,6 +8,9 @@ open a [GitHub security advisory](https://github.com/robertolima-dev/gize/securi
 not open a public issue for undisclosed vulnerabilities. We aim to acknowledge reports within a
 few days.
 
+Security fixes go to the latest release, and from 1.0 also to the previous 1.x minor for 3 months
+after the next minor is released. See [`SUPPORT.md`](./SUPPORT.md#supported-versions).
+
 ## The security model of generated apps
 
 Gize generates plain, owned Rust — there is no hidden runtime. The generated auth stack

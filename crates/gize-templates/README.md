@@ -35,7 +35,7 @@ internals may move to `minijinja` templates on disk without changing the generat
 
 ```toml
 [dependencies]
-gize-templates = "0.7"
+gize-templates = "0.9"
 ```
 
 ## Part of the Gize workspace
