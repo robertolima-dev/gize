@@ -194,7 +194,7 @@ use super::dto::{CreateUser, ListParams, LoginRequest, Page, TokenResponse, Upda
 use super::error::Error;
 use super::model::User;
 use super::service;
-use crate::auth::{hash_password, issue_token, verify_password, Claims};
+use crate::auth::{hash_password_async, issue_token, verify_password_async, Claims};
 use crate::state::AppState;
 
 /// `GET /users?page=&per_page=` (admin only). Invalid paging parameters are a 422.
@@ -231,7 +231,9 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<User>), Error> {
     input.validate()?;
     let stored = CreateUser {
-        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        password: hash_password_async(input.password.clone())
+            .await
+            .map_err(|_| Error::Internal)?,
         ..input
     };
     let user = service::create(&state.db, &stored).await?;
@@ -245,7 +247,9 @@ pub async fn update(
 ) -> Result<Json<User>, Error> {
     input.validate()?;
     let stored = UpdateUser {
-        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        password: hash_password_async(input.password.clone())
+            .await
+            .map_err(|_| Error::Internal)?,
         ..input
     };
     Ok(Json(service::update(&state.db, id, &stored).await?))
@@ -269,7 +273,9 @@ pub async fn register(
 ) -> Result<(StatusCode, Json<TokenResponse>), Error> {
     input.validate()?;
     let stored = CreateUser {
-        password: hash_password(&input.password).map_err(|_| Error::Internal)?,
+        password: hash_password_async(input.password.clone())
+            .await
+            .map_err(|_| Error::Internal)?,
         is_admin: false,
         ..input
     };
@@ -291,11 +297,12 @@ pub async fn login(
         .await?;
     // Verify a password whether or not the email exists, so the response time does not reveal
     // which accounts are registered (user enumeration). An unknown email is checked against a
-    // throwaway hash so it costs the same as a real verification.
+    // throwaway hash so it costs the same as a real verification. Argon2 runs off the async
+    // runtime (see `crate::auth`), so a burst of logins does not stall other requests.
     let authenticated = match &user {
-        Some(user) => verify_password(&input.password, &user.password),
+        Some(user) => verify_password_async(input.password, user.password.clone()).await,
         None => {
-            let _ = verify_password(&input.password, dummy_password_hash());
+            let _ = verify_password_async(input.password, dummy_password_hash().await).await;
             false
         }
     };
@@ -310,9 +317,15 @@ pub async fn login(
 
 /// A valid Argon2 hash of a throwaway password, computed once. Used to equalize login timing for
 /// unknown emails (see `login`), so an attacker cannot enumerate accounts by response time.
-fn dummy_password_hash() -> &'static str {
-    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    HASH.get_or_init(|| hash_password("gize-timing-equalizer").unwrap_or_default())
+async fn dummy_password_hash() -> String {
+    static HASH: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+    HASH.get_or_init(|| async {
+        hash_password_async("gize-timing-equalizer".to_string())
+            .await
+            .unwrap_or_default()
+    })
+    .await
+    .clone()
 }
 "#
     .replace("__P1__", &dialect.placeholder(1))
@@ -443,6 +456,20 @@ mod tests {
         assert!(out.contains("pub async fn me("));
         assert!(out.contains("Extension(claims): Extension<Claims>"));
         assert!(out.contains("claims.sub.parse::<uuid::Uuid>()"));
+    }
+
+    #[test]
+    fn handlers_hash_and_verify_passwords_off_the_async_runtime() {
+        let out = handler_rs(Dialect::Postgres);
+        assert_eq!(
+            out.matches("hash_password_async(input.password.clone())")
+                .count(),
+            3
+        );
+        assert!(out.contains("verify_password_async(input.password, user.password.clone())"));
+        assert!(out.contains("verify_password_async(input.password, dummy_password_hash().await)"));
+        assert!(!out.contains("hash_password(&"));
+        assert!(!out.contains("verify_password(&"));
     }
 
     #[test]

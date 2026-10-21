@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.2] - 2026-10-21
+
+### Fixed
+
+- Generated password hashing and verification no longer block the async runtime. The `users`
+  handlers (`register`, `login`, `create`, `update`) now call `hash_password_async` /
+  `verify_password_async` from `src/auth/mod.rs`, which run Argon2 on Tokio's blocking pool and
+  allow at most half the CPU cores (at least one) to hash at once. Measured on a generated
+  SQLite app with 32 clients logging in continuously: `GET /posts` went from a 265 ms median
+  (312 ms worst case) to 0.6 ms (6 ms worst case), with the same login throughput. Login timing
+  stays equal for known and unknown emails. The concurrency cap also bounds Argon2's memory use
+  (about 19 MiB per hash) during a burst. The synchronous `hash_password` / `verify_password`
+  remain available.
+
 ## [0.9.1] - 2026-10-21
 
 ### Changed

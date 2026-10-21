@@ -102,6 +102,21 @@ If you regenerate the `users` slice (`gize sync --force` on `src/app/users/*` an
 
 See [`SECURITY.md`](./SECURITY.md) for the full authorization model.
 
+### → 0.9.0 — names are validated before generation
+
+Generation (`make model`, `make crud`, `make app`, `make admin`, `sync`) now validates model,
+field, relationship and module names first, and writes nothing if one is invalid, even with
+`--force` or `--dry-run`. Rejected names include Rust keywords, SQL words reserved by the
+selected database (`array` on PostgreSQL, `key` or `range` on MySQL), declared `id`,
+`created_at` or `updated_at`, and duplicate or colliding fields. The error names the module to
+rename.
+
+A `gize.toml` with such names still works with `migrate`, `serve` and `check`; only generation
+refuses it. To keep generating, rename the module or field in `gize.toml` and in your code, and
+add a named migration (`gize make migration rename_...`) for the database side. Do not edit
+migrations that were already applied. See the naming rules in
+[the cookbook](./docs/cookbook.md#generate-a-resource).
+
 ### → 0.9.1 — paginated list routes ([ADR-022](./ADR/adr-022-pagination.md))
 
 `GET /<table>` (and `GET /users`) now returns a page object instead of every row as an array:
@@ -127,6 +142,15 @@ edits from your git diff. Afterwards:
 
 Keeping the unpaginated routes is a supported choice: leave those files as they are and `sync`
 will report them as drift without touching them.
+
+### → 0.9.2 — password hashing off the async runtime
+
+No API change. To adopt it, regenerate `src/auth/mod.rs` **and** `src/app/users/handler.rs`
+together (`gize sync --force`, then reconcile hand edits from your git diff): the new handler
+calls `hash_password_async` / `verify_password_async`, which only exist in the new auth module.
+If you wrote handlers of your own that hash or verify passwords, switch them to the `_async`
+helpers too. To change how many hashes run at once, edit `hashing_permits()` in
+`src/auth/mod.rs`.
 
 ## If an upgrade breaks something
 

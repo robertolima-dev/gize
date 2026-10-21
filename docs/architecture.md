@@ -135,7 +135,9 @@ Generated auth is **Argon2id** password hashing plus a stateless **JWT (HS256)**
 - The **`users`** resource is admin-gated end to end (reads included); `register`/`login` are
   public and `register` forces `is_admin = false`.
 - **Generic** resources: writes require `require_auth`, reads are public.
-- Passwords are hashed on every write and never serialized in responses.
+- Passwords are hashed on every write and never serialized in responses. Hashing and
+  verification run on the blocking pool with bounded concurrency (`hash_password_async` /
+  `verify_password_async`), so they never stall the async runtime.
 
 Authorization beyond "valid token / is admin" (ownership, roles, per-field policies) is yours to
 add — see [SECURITY.md](../SECURITY.md).

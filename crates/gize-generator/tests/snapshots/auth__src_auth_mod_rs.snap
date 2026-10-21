@@ -18,7 +18,9 @@ use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Semaphore;
 
 /// How long an issued token stays valid. Kept short since stateless JWTs cannot be revoked.
 const TOKEN_TTL_SECS: u64 = 24 * 60 * 60;
@@ -67,6 +69,47 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
             .is_ok(),
         Err(_) => false,
     }
+}
+
+/// Bounds how many Argon2 computations run at once. Each one takes tens of milliseconds of CPU
+/// and about 19 MiB of memory, so a burst of logins could otherwise use every core and a lot of
+/// RAM. Half the available cores (at least one) leaves the rest for other requests; change the
+/// number here if your service mostly does authentication.
+fn hashing_permits() -> &'static Semaphore {
+    static PERMITS: OnceLock<Semaphore> = OnceLock::new();
+    PERMITS.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+        Semaphore::new((cores / 2).max(1))
+    })
+}
+
+/// Run CPU-heavy password work on Tokio's blocking pool, at most `hashing_permits()` at a time,
+/// so request handlers never block the async worker threads.
+async fn run_password_work<T, F>(work: F) -> Result<T, AuthError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let _permit = hashing_permits()
+        .acquire()
+        .await
+        .map_err(|_| AuthError::Internal)?;
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| AuthError::Internal)
+}
+
+/// [`hash_password`] for async code: use this in request handlers.
+pub async fn hash_password_async(password: String) -> Result<String, AuthError> {
+    run_password_work(move || hash_password(&password)).await?
+}
+
+/// [`verify_password`] for async code: use this in request handlers. A failure to schedule the
+/// work counts as a failed verification.
+pub async fn verify_password_async(password: String, hash: String) -> bool {
+    run_password_work(move || verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
 }
 
 /// JWT claims: the subject (user id), the admin flag, issued-at and expiry (seconds since the
@@ -163,6 +206,13 @@ mod tests {
         let hash = hash_password("s3cr3t").unwrap();
         assert!(verify_password("s3cr3t", &hash));
         assert!(!verify_password("wrong", &hash));
+    }
+
+    #[tokio::test]
+    async fn async_password_helpers_match_the_sync_ones() {
+        let hash = hash_password_async("s3cr3t".to_string()).await.unwrap();
+        assert!(verify_password_async("s3cr3t".to_string(), hash.clone()).await);
+        assert!(!verify_password_async("wrong".to_string(), hash).await);
     }
 
     #[test]

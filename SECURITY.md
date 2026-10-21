@@ -25,6 +25,9 @@ the application's responsibility. Read this before shipping.
 - **Login is constant-time with respect to account existence** (since 0.8.1): an unknown email is
   checked against a throwaway hash, so response timing does not reveal which emails are
   registered.
+- **Argon2 runs off the async runtime** (since 0.9.2): hashing and verification run on Tokio's
+  blocking pool, at most half the CPU cores at a time, so a burst of logins neither stalls other
+  requests nor multiplies Argon2's memory use without bound.
 - **`gize createadmin`** never takes the password as an argument — only a hidden prompt or an
   environment variable.
 

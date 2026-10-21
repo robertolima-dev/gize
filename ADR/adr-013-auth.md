@@ -99,3 +99,20 @@ Performed on the generated auth code before shipping WS5.
   force and weak-password mitigation are tracked for later (rate limiting; validation layer).
 - **Default dev secret.** `.env.example` ships `GIZE_JWT_SECRET=dev-only-change-me` with a
   note to replace it; `gize doctor` reports whether it is set.
+
+## Revision (2026-10-21) — Argon2 off the async runtime
+
+The generated handlers used to call `hash_password` / `verify_password` directly inside async
+handlers. Argon2id with default parameters costs tens of milliseconds of CPU and about 19 MiB per
+call, so a burst of logins occupied every Tokio worker thread and delayed unrelated requests by
+hundreds of milliseconds.
+
+The generated `src/auth/mod.rs` now also provides `hash_password_async` /
+`verify_password_async`. They run the same synchronous functions through
+`tokio::task::spawn_blocking`, behind a `tokio::sync::Semaphore` sized to half the available
+cores (at least one). The `users` handlers use them, including the dummy verification that keeps
+login timing equal for unknown emails. The parameters and hash format are unchanged, so existing
+hashes keep verifying.
+
+A fixed cap trades peak login throughput for latency of everything else; the number lives in
+`hashing_permits()` in the owned code, so a service that mostly authenticates can raise it.
