@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.10] - 2026-10-22
+
+### Fixed
+
+- **Admin: a bulk delete that partly failed left deleted rows on screen.** "Delete selected"
+  sent the deletes together and treated them as one: when one failed (a product still
+  referenced by an order answers 409), the list was not refreshed, so rows already deleted
+  kept showing, and the message gave only the error. Each delete now settles on its own: the
+  list is always refreshed, the rows that failed stay selected so they can be retried, and the
+  message says how many were deleted and why the others failed ("Deleted 1 of 2 products; 1
+  failed: ..."). Existing projects get the fix by replacing `admin/src/Resource.tsx` with the
+  one a 0.9.10 project generates (`gize sync --force` overwrites every drifted file, so use it
+  only when `gize sync --dry-run` lists that file alone).
+
 ## [0.9.9] - 2026-10-22
 
 ### Fixed

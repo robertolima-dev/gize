@@ -69,14 +69,31 @@ export function Resource({
   const list = useQuery<Row[]>({ queryKey: [desc.path], queryFn: () => api.list(desc.path) });
   const items = list.data ?? [];
 
+  // Each delete settles on its own: when some fail, the others are still gone, so the list is
+  // always refreshed and only the rows that failed stay selected, ready to retry.
   const remove = useMutation({
-    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => api.remove(desc.path, id))),
-    onSuccess: (_r, ids) => {
-      qc.invalidateQueries({ queryKey: [desc.path] });
-      setSelected(new Set());
-      toast(ids.length > 1 ? `Deleted ${ids.length} ${desc.path}` : "Deleted");
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => api.remove(desc.path, id)));
+      const failed = ids.filter((_, i) => results[i].status === "rejected");
+      const firstError = results.find((r) => r.status === "rejected") as
+        | PromiseRejectedResult
+        | undefined;
+      return { deleted: ids.length - failed.length, failed, error: firstError?.reason };
+    },
+    onSuccess: ({ deleted, failed, error }, ids) => {
+      setSelected(new Set(failed));
+      if (failed.length === 0) {
+        toast(ids.length > 1 ? `Deleted ${ids.length} ${desc.path}` : "Deleted");
+      } else if (deleted === 0) {
+        toast(String(error));
+      } else {
+        toast(
+          `Deleted ${deleted} of ${ids.length} ${desc.path}; ${failed.length} failed: ${String(error)}`,
+        );
+      }
     },
     onError: (e) => toast(String(e)),
+    onSettled: () => qc.invalidateQueries({ queryKey: [desc.path] }),
   });
 
   const filtered = useMemo(() => {
