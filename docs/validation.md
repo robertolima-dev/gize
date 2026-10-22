@@ -80,7 +80,7 @@ code -X POST localhost:8080/products -d '{}'         # expect 401
 
 # register a normal user (public) and grab the token from the JSON body
 curl -s -X POST localhost:8080/users/register -H 'content-type: application/json' \
-  -d '{"name":"Ada","email":"ada@example.com","password":"longenough","is_admin":false}'
+  -d '{"name":"Ada","email":"ada@example.com","password":"longenough"}'
 
 # users resource is admin-gated (ADR-021)
 code localhost:8080/users                            # expect 401 (no token)
@@ -95,7 +95,7 @@ code localhost:8080/users -H "authorization: Bearer <admin-token>"  # expect 200
 
 **Also check:**
 
-- A registered user is stored as **non-admin** even if the body says `is_admin: true`.
+- A registered user is stored as **non-admin** even if the body says `is_admin: true` (register takes no `is_admin`; the field is ignored).
 - Responses never contain a `password` field.
 - OpenAPI: open `http://localhost:8080/docs` and fetch `http://localhost:8080/openapi.json`.
 

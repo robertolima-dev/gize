@@ -204,6 +204,14 @@ model = "Movie"
 
 Nothing else changes: other manifests stay valid as they are.
 
+### → 0.9.11 — `register` without `is_admin`
+
+Optional. New projects accept `POST /users/register` with just `name`, `email` and
+`password`. An existing project keeps requiring `is_admin` in that body (and ignoring its
+value) until `src/app/users/dto.rs` and `src/app/users/handler.rs` are regenerated: replace them
+with the ones a 0.9.11 project generates, or, if `gize sync --dry-run` lists only those files as
+drift, run `gize sync --force`. Clients that send `is_admin` work with both versions.
+
 ## If an upgrade breaks something
 
 If `gize sync` proposes to overwrite a file you did **not** ask it to, or a compatible upgrade

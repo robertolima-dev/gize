@@ -93,6 +93,18 @@ pub struct UpdateUser {
     pub is_admin: bool,
 }
 
+/// Payload for the public `POST /users/register`. It has no `is_admin`: a public sign-up never
+/// creates an admin. A client that still sends the field is accepted and the field is ignored.
+#[derive(Debug, Deserialize, Validate)]
+pub struct RegisterRequest {
+    #[validate(length(min = 1, message = "must not be empty"))]
+    pub name: String,
+    #[validate(email(message = "must be a valid email"))]
+    pub email: String,
+    #[validate(length(min = 8, message = "must be at least 8 characters"))]
+    pub password: String,
+}
+
 /// Credentials for `POST /users/login`.
 #[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {
@@ -190,7 +202,9 @@ use axum::Extension;
 
 use validator::Validate;
 
-use super::dto::{CreateUser, ListParams, LoginRequest, Page, TokenResponse, UpdateUser};
+use super::dto::{
+    CreateUser, ListParams, LoginRequest, Page, RegisterRequest, TokenResponse, UpdateUser,
+};
 use super::error::Error;
 use super::model::User;
 use super::service;
@@ -265,19 +279,21 @@ pub async fn delete(
 
 /// Public: register a new user (hashing the password) and return a session token.
 ///
-/// `is_admin` is forced to `false` here — this is a public endpoint, so a client must not be
-/// able to grant itself admin. Admins are created through the guarded `POST /users` route.
+/// The payload has no `is_admin` and the user is stored with `is_admin = false` — this is a
+/// public endpoint, so a client must not be able to grant itself admin. Admins are created
+/// through the guarded `POST /users` route.
 pub async fn register(
     State(state): State<AppState>,
-    Json(input): Json<CreateUser>,
+    Json(input): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<TokenResponse>), Error> {
     input.validate()?;
     let stored = CreateUser {
-        password: hash_password_async(input.password.clone())
+        name: input.name,
+        email: input.email,
+        password: hash_password_async(input.password)
             .await
             .map_err(|_| Error::Internal)?,
         is_admin: false,
-        ..input
     };
     let user = service::create(&state.db, &stored).await?;
     // A freshly registered user is never an admin (see `is_admin = false` above).
@@ -464,8 +480,9 @@ mod tests {
         assert_eq!(
             out.matches("hash_password_async(input.password.clone())")
                 .count(),
-            3
+            2
         );
+        assert!(out.contains("hash_password_async(input.password)\n"));
         assert!(out.contains("verify_password_async(input.password, user.password.clone())"));
         assert!(out.contains("verify_password_async(input.password, dummy_password_hash().await)"));
         assert!(!out.contains("hash_password(&"));
@@ -475,7 +492,10 @@ mod tests {
     #[test]
     fn handlers_embed_admin_flag_in_issued_tokens() {
         let out = handler_rs(Dialect::Postgres);
-        // register never mints an admin token; login reflects the stored flag.
+        // register takes no admin flag and never mints an admin token; login reflects the
+        // stored flag.
+        assert!(out.contains("Json(input): Json<RegisterRequest>"));
+        assert!(out.contains("is_admin: false,"));
         assert!(out.contains("issue_token(&user.id, false)"));
         assert!(out.contains("issue_token(&user.id, user.is_admin)"));
     }

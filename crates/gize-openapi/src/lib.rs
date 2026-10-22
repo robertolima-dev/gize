@@ -74,6 +74,7 @@ pub fn spec_json(manifest: &Manifest) -> Result<Value> {
         );
 
         if table == "users" {
+            schemas.insert("RegisterRequest".into(), register_request_schema());
             schemas.insert("LoginRequest".into(), login_request_schema());
             schemas.insert("TokenResponse".into(), token_response_schema());
             paths.insert(format!("{prefix}/users/register"), register_path());
@@ -136,6 +137,19 @@ fn dto_schema(model: &ModelSpec) -> Value {
         required.push(Value::String(f.name.clone()));
     }
     json!({ "type": "object", "properties": Value::Object(props), "required": required })
+}
+
+/// `POST /users/register` takes no `is_admin`: a public sign-up never creates an admin.
+fn register_request_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" },
+            "email": { "type": "string", "format": "email" },
+            "password": { "type": "string" }
+        },
+        "required": ["name", "email", "password"]
+    })
 }
 
 fn login_request_schema() -> Value {
@@ -290,7 +304,7 @@ fn register_path() -> Value {
         "post": {
             "tags": ["users"],
             "summary": "Register a new user and receive a token",
-            "requestBody": json_content(schema_ref("CreateUser")),
+            "requestBody": json_content(schema_ref("RegisterRequest")),
             "responses": {
                 "201": json_content(schema_ref("TokenResponse")),
                 "409": { "description": "conflict" },
@@ -389,6 +403,14 @@ mod tests {
                 .get("403")
                 .is_some()
         );
+        // register takes its own payload, without `is_admin`.
+        assert_eq!(
+            paths["/users/register"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+                ["$ref"],
+            "#/components/schemas/RegisterRequest"
+        );
+        let register = &spec["components"]["schemas"]["RegisterRequest"];
+        assert!(register["properties"].get("is_admin").is_none());
         // register/login stay public.
         assert!(paths["/users/register"]["post"].get("security").is_none());
         assert!(paths["/users/login"]["post"].get("security").is_none());

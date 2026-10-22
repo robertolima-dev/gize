@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.11] - 2026-10-22
+
+### Changed
+
+- **Generated users: `POST /users/register` no longer needs `is_admin`.** The endpoint took the
+  admin's `CreateUser` payload, so a body without `is_admin` was rejected with 422 even though
+  the handler always stores `false`. It now takes its own `RegisterRequest` (`name`, `email`,
+  `password`), and the OpenAPI spec documents that payload. Clients that still send `is_admin`
+  keep working: the field is ignored, as before. `POST /users` (admin only) is unchanged.
+  Existing projects can adopt it by replacing `src/app/users/dto.rs` and
+  `src/app/users/handler.rs` with the ones a 0.9.11 project generates; nothing breaks if they
+  don't. See [MIGRATION.md](./MIGRATION.md).
+
 ## [0.9.10] - 2026-10-22
 
 ### Fixed

@@ -25,6 +25,18 @@ pub struct UpdateUser {
     pub is_admin: bool,
 }
 
+/// Payload for the public `POST /users/register`. It has no `is_admin`: a public sign-up never
+/// creates an admin. A client that still sends the field is accepted and the field is ignored.
+#[derive(Debug, Deserialize, Validate)]
+pub struct RegisterRequest {
+    #[validate(length(min = 1, message = "must not be empty"))]
+    pub name: String,
+    #[validate(email(message = "must be a valid email"))]
+    pub email: String,
+    #[validate(length(min = 8, message = "must be at least 8 characters"))]
+    pub password: String,
+}
+
 /// Credentials for `POST /users/login`.
 #[derive(Debug, Deserialize, Validate)]
 pub struct LoginRequest {

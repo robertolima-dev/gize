@@ -81,7 +81,9 @@ expect "users list as admin" \
 expect "wrong password" "$(code -X POST "$BASE/users/login" -H "$J" \
   -d '{"email":"ada@e2e.dev","password":"wrong-password"}')" 401
 expect "duplicate email" "$(code -X POST "$BASE/users/register" -H "$J" \
-  -d '{"name":"B","email":"ada@e2e.dev","password":"longenough","is_admin":false}')" 409
+  -d '{"name":"B","email":"ada@e2e.dev","password":"longenough"}')" 409
+expect "register without is_admin" "$(code -X POST "$BASE/users/register" -H "$J" \
+  -d '{"name":"Bea","email":"bea@e2e.dev","password":"longenough"}')" 201
 AUTHOR=$(curl -s "$BASE/users/me" -H "authorization: Bearer $TOKEN" | json "d['id']")
 AUTH="authorization: Bearer $TOKEN"
 post_body() { printf '{"title":"%s","published":%s,"author_id":"%s"}' "$1" "$2" "$AUTHOR"; }

@@ -47,9 +47,9 @@ Gize generates two guards in `src/auth/mod.rs`:
 
 **The `users` resource is admin-gated by default.** Every `users` route except `register`/`login`
 — *including reads* — requires an admin token, so no authenticated user can list, edit or delete
-other accounts, and account listings are not exposed. `register` still forces `is_admin = false`
-so a client cannot grant itself admin; admins are created via the admin-guarded `POST /users` or
-`gize createadmin`.
+other accounts, and account listings are not exposed. `register` takes no `is_admin` and always
+stores `false`, so a client cannot grant itself admin; admins are created via the admin-guarded
+`POST /users` or `gize createadmin`.
 
 **Generic resources** (from `gize make crud`) keep the pragmatic default: **writes require
 `require_auth`, reads are public** (see below). Role and ownership authorization there is still
