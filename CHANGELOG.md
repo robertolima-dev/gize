@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.12] - 2026-10-22
+
+### Fixed
+
+- **Admin: a refused request looked like an empty list.** A signed-in user without access to a
+  resource (a non-admin on `users` gets 403) saw "Loading…" for about 7 seconds while the
+  request was retried, then "No users yet.". An expired or invalid token did the same instead
+  of returning to sign-in. API errors now carry their HTTP status: a 4xx answer is not retried
+  (network errors and 5xx still are, up to 3 times), a 403 shows "You don't have permission to
+  see users.", other load failures show their error, and a 401 on any request, including a bulk
+  delete, signs out with "Your session has expired. Sign in again." on the sign-in screen.
+  Existing projects get the fix by replacing `admin/src/api.ts`, `admin/src/App.tsx`,
+  `admin/src/auth.tsx` and `admin/src/Resource.tsx` with the ones a 0.9.12 project generates
+  (`gize sync --force` overwrites every drifted file, so use it only when `gize sync --dry-run`
+  lists those files alone).
+
 ## [0.9.11] - 2026-10-22
 
 ### Changed

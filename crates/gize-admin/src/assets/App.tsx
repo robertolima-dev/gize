@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { resources, type ResourceDesc } from "./resources";
 import { Resource } from "./Resource";
 import { ResourceForm } from "./ResourceForm";
 import { Login, useAuth } from "./auth";
 import { ToastHost } from "./toast";
-import { titleCase } from "./api";
+import { statusOf, titleCase } from "./api";
 import { Icon } from "./icons";
 import { currentTheme, toggleTheme, type Theme } from "./theme";
 
@@ -13,14 +18,33 @@ type Editing = { desc: ResourceDesc; row: Record<string, any> | null };
 
 export default function App() {
   const auth = useAuth();
-  if (!auth.token) return <Login onLogin={auth.login} />;
+  if (!auth.token) return <Login onLogin={auth.login} notice={auth.notice} />;
   // Keyed by the token: each sign-in mounts a fresh admin, with its own query cache and no form
   // left open, so nothing the previous account loaded is shown to the next one.
   return <Admin key={auth.token} onLogout={auth.logout} />;
 }
 
-function Admin({ onLogout }: { onLogout: () => void }) {
-  const [client] = useState(() => new QueryClient());
+function Admin({ onLogout }: { onLogout: (reason?: string) => void }) {
+  const [client] = useState(() => {
+    // A 401 means the token expired or is no longer valid: back to sign-in, saying why.
+    const endExpiredSession = (error: unknown) => {
+      if (statusOf(error) === 401) onLogout("Your session has expired. Sign in again.");
+    };
+    return new QueryClient({
+      queryCache: new QueryCache({ onError: endExpiredSession }),
+      mutationCache: new MutationCache({ onError: endExpiredSession }),
+      // A 4xx answer will not change on retry (a 403 stays a 403), so only network errors and
+      // 5xx are retried; the rest show their error at once.
+      defaultOptions: {
+        queries: {
+          retry: (failures, error) => {
+            const status = statusOf(error);
+            return (status === undefined || status >= 500) && failures < 3;
+          },
+        },
+      },
+    });
+  });
   const [theme, setThemeState] = useState<Theme>(currentTheme());
   const [activePath, setActivePath] = useState(resources[0]?.path ?? "");
   const [editing, setEditing] = useState<Editing | null>(null);

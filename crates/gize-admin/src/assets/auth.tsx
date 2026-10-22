@@ -4,18 +4,28 @@ import { Icon } from "./icons";
 
 export function useAuth() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("gize_token"));
+  // Why the last session ended, when it was not the user's choice (shown on the sign-in screen).
+  const [notice, setNotice] = useState<string | null>(null);
   function login(t: string) {
     localStorage.setItem("gize_token", t);
+    setNotice(null);
     setToken(t);
   }
-  function logout() {
+  function logout(reason?: string) {
     localStorage.removeItem("gize_token");
+    setNotice(reason ?? null);
     setToken(null);
   }
-  return { token, login, logout };
+  return { token, notice, login, logout };
 }
 
-export function Login({ onLogin }: { onLogin: (token: string) => void }) {
+export function Login({
+  onLogin,
+  notice,
+}: {
+  onLogin: (token: string) => void;
+  notice?: string | null;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -106,7 +116,7 @@ export function Login({ onLogin }: { onLogin: (token: string) => void }) {
                 </button>
               </div>
             </div>
-            {error && <p className="login__err">{error}</p>}
+            {(error || notice) && <p className="login__err">{error || notice}</p>}
             <button
               className="btn primary"
               type="submit"

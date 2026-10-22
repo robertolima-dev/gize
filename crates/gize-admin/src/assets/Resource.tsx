@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, labelOf, nounOf, titleCase } from "./api";
+import { api, labelOf, nounOf, statusOf, titleCase } from "./api";
 import { Icon } from "./icons";
 import { toast } from "./toast";
 import type { FieldDesc, ResourceDesc } from "./resources";
@@ -25,6 +25,12 @@ function RefCell({ resource, id }: { resource: string; id: string }) {
   const { data } = useQuery<Row[]>({ queryKey: [resource], queryFn: () => api.list(resource) });
   const row = (data ?? []).find((r) => r.id === id);
   return row ? <span>{labelOf(row)}</span> : <span className="id">{shortId(id)}</span>;
+}
+
+/** What to show when a list could not be loaded. */
+function loadError(path: string, error: unknown): string {
+  if (statusOf(error) === 403) return `You don't have permission to see ${path}.`;
+  return `Couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 function Cell({ field, value }: { field: FieldDesc; value: unknown }) {
@@ -74,6 +80,9 @@ export function Resource({
   const remove = useMutation({
     mutationFn: async (ids: string[]) => {
       const results = await Promise.allSettled(ids.map((id) => api.remove(desc.path, id)));
+      // An expired session fails the whole batch: rethrow it so the admin signs out.
+      const expired = results.find((r) => r.status === "rejected" && statusOf(r.reason) === 401);
+      if (expired) throw (expired as PromiseRejectedResult).reason;
       const failed = ids.filter((_, i) => results[i].status === "rejected");
       const firstError = results.find((r) => r.status === "rejected") as
         | PromiseRejectedResult
@@ -226,7 +235,13 @@ export function Resource({
             {shown.length === 0 && (
               <div className="empty">
                 <Icon name="inbox" />
-                <div>{list.isLoading ? "Loading…" : `No ${desc.path} yet.`}</div>
+                <div>
+                  {list.isLoading
+                    ? "Loading…"
+                    : list.isError
+                      ? loadError(desc.path, list.error)
+                      : `No ${desc.path} yet.`}
+                </div>
               </div>
             )}
           </div>
