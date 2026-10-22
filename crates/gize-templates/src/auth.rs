@@ -28,7 +28,7 @@ use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Semaphore;
 
@@ -85,12 +85,14 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
 /// and about 19 MiB of memory, so a burst of logins could otherwise use every core and a lot of
 /// RAM. Half the available cores (at least one) leaves the rest for other requests; change the
 /// number here if your service mostly does authentication.
-fn hashing_permits() -> &'static Semaphore {
-    static PERMITS: OnceLock<Semaphore> = OnceLock::new();
-    PERMITS.get_or_init(|| {
-        let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
-        Semaphore::new((cores / 2).max(1))
-    })
+fn hashing_permits() -> Arc<Semaphore> {
+    static PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    PERMITS
+        .get_or_init(|| {
+            let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+            Arc::new(Semaphore::new((cores / 2).max(1)))
+        })
+        .clone()
 }
 
 /// Run CPU-heavy password work on Tokio's blocking pool, at most `hashing_permits()` at a time,
@@ -100,13 +102,27 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
-    let _permit = hashing_permits()
-        .acquire()
+    run_limited(hashing_permits(), work).await
+}
+
+/// Run `work` on the blocking pool once `permits` has a slot. The permit moves into the blocking
+/// task: if the request is cancelled (the client disconnects mid-login), the work still runs to
+/// the end, so its slot must stay taken until then.
+async fn run_limited<T, F>(permits: Arc<Semaphore>, work: F) -> Result<T, AuthError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let permit = permits
+        .acquire_owned()
         .await
         .map_err(|_| AuthError::Internal)?;
-    tokio::task::spawn_blocking(work)
-        .await
-        .map_err(|_| AuthError::Internal)
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| AuthError::Internal)
 }
 
 /// [`hash_password`] for async code: use this in request handlers.
@@ -225,6 +241,29 @@ mod tests {
         assert!(!verify_password_async("wrong".to_string(), hash).await);
     }
 
+    #[tokio::test]
+    async fn a_cancelled_request_keeps_its_slot_until_the_work_ends() {
+        let permits = Arc::new(Semaphore::new(1));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel::<()>();
+        let request = tokio::spawn(run_limited(permits.clone(), move || {
+            started_tx.send(()).unwrap();
+            finish_rx.recv().unwrap();
+        }));
+        tokio::task::spawn_blocking(move || started_rx.recv().unwrap())
+            .await
+            .unwrap();
+
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert_eq!(permits.available_permits(), 0, "the work is still running");
+
+        finish_tx.send(()).unwrap();
+        let _slot = tokio::time::timeout(std::time::Duration::from_secs(5), permits.acquire())
+            .await
+            .expect("the slot is released when the work ends");
+    }
+
     #[test]
     fn token_roundtrip() {
         // SAFETY: test-only; sets the secret for this process.
@@ -256,8 +295,11 @@ mod template_tests {
     #[test]
     fn argon2_runs_on_the_blocking_pool_with_a_permit() {
         let out = mod_rs();
-        assert!(out.contains("tokio::task::spawn_blocking(work)"));
+        assert!(out.contains("tokio::task::spawn_blocking(move || {"));
         assert!(out.contains("hashing_permits()"));
+        // The permit is held by the blocking task, not by the (cancellable) request.
+        assert!(out.contains(".acquire_owned()"));
+        assert!(out.contains("let _permit = permit;\n        work()"));
         assert!(out.contains("pub async fn hash_password_async(password: String)"));
         assert!(out.contains("pub async fn verify_password_async(password: String, hash: String)"));
     }

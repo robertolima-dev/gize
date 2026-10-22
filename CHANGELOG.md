@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.9] - 2026-10-22
+
+### Fixed
+
+- **Generated auth: a cancelled login freed its hashing slot too early.** The permit that caps
+  concurrent Argon2 work was held by the request, while the hashing ran in `spawn_blocking`.
+  When a request was cancelled (a client disconnecting mid-login), the permit was released but
+  the hashing kept running, so more computations than the limit could run at once. The permit
+  now moves into the blocking task and is released only when the work ends. A generated test
+  cancels a request mid-hash and checks the slot stays taken. Existing projects get the fix by
+  replacing `run_password_work` in `src/auth/mod.rs` with the one a 0.9.9 project generates
+  (`gize sync --force` overwrites every drifted file, so use it only when `gize sync --dry-run`
+  lists that file alone).
+
 ## [0.9.8] - 2026-10-22
 
 ### Fixed
