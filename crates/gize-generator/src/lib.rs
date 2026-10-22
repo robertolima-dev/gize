@@ -18,4 +18,4 @@ pub mod scaffold;
 pub use plan::{FileOp, OpKind, Plan};
 pub use plugin::{GenContext, Generator};
 pub use registry::{Edit, register_module};
-pub use writer::{Options, Report, Writer, format_rust_files, format_rust_str};
+pub use writer::{Options, Report, Writer, format_for_path, format_rust_str};

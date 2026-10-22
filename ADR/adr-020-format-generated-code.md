@@ -23,13 +23,18 @@ modules and wraps for many). No static template can be rustfmt-idempotent for *a
 **Run `rustfmt` over the generated `.rs` files at write time.** This makes output match the
 toolchain's formatting exactly, for any names, and stays correct as rustfmt evolves.
 
-- The `Writer` gained an `Options.format` flag. When set, after writing a plan it runs
-  `rustfmt --edition 2024` over the `.rs` files it just created/overwrote. The CLI turns it on
-  (`From<GenFlags>`); tests and plugins using `Options::default()` leave it off.
-- `app/mod.rs` is edited in place by the registry (not through the `Writer`), so the CLI runs
-  rustfmt over it after each registration — this sorts the `mod` declarations and
+- The `Writer` gained an `Options.format` flag. When set, each `.rs` file it creates or
+  overwrites is passed through `rustfmt --edition 2024` (stdin → stdout) before it is written.
+  The CLI turns it on (`From<GenFlags>`); tests and plugins using `Options::default()` leave it
+  off.
+- `app/mod.rs` is edited in place by the registry (not through the `Writer`), so the CLI formats
+  its new text the same way after each registration — this sorts the `mod` declarations and
   collapses/wraps the merge chain, which a marker-based text insertion cannot do.
-- `gize sync` formats the files it reconciles the same way.
+- `gize sync` formats the files it writes the same way.
+- **Only text is formatted, never a path** (0.9.7). `rustfmt` given a file also formats every
+  `mod x;` it declares, so formatting `app/mod.rs` on disk rewrote every resource, including
+  hand-edited files the command had left alone. Formatting the text costs one `rustfmt` process
+  per file (about 0.3 s more for `gize new`).
 - It is **best-effort**: if `rustfmt` is missing or fails, the files are left as written (valid
   Rust, just unformatted) — generation never fails because of formatting.
 

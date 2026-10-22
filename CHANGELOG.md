@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.7] - 2026-10-22
+
+### Fixed
+
+- **Generating a resource reformatted the other resources' files.** After `gize make crud`
+  wired a module into `src/app/mod.rs`, the CLI ran `rustfmt` on that file, and `rustfmt` also
+  formats every module it declares: a hand-edited `src/app/movies/service.rs` was rewritten
+  (formatting only) by `gize make crud Product`, without `--force`. `make`, `new` and `sync` now
+  format the text of each file they write before writing it, so files they leave alone stay
+  byte-for-byte as they were.
+
+### Changed
+
+- `gize-generator`: `format_rust_files` is replaced by `format_for_path`, which formats text
+  instead of files on disk.
+
 ## [0.9.6] - 2026-10-22
 
 ### Fixed

@@ -140,10 +140,11 @@ fn register_in_app_mod(module: &str, flags: GenFlags) -> Result<()> {
     if flags.dry_run {
         println!("  update  src/app/mod.rs (would register module + routes)");
     } else {
-        fs::write(path, edit.content).context("writing src/app/mod.rs")?;
         // rustfmt normalizes the wiring we just edited: sorts the `mod` declarations and
         // collapses/wraps the merge chain, so `app/mod.rs` stays rustfmt-clean (ADR-020).
-        gize_generator::format_rust_files(&[path.to_path_buf()]);
+        // Only this file's text is formatted, not the modules it declares.
+        fs::write(path, gize_generator::format_rust_str(&edit.content))
+            .context("writing src/app/mod.rs")?;
         println!("  update  src/app/mod.rs (registered module + routes)");
     }
     Ok(())
@@ -564,19 +565,20 @@ pub fn sync(flags: GenFlags) -> Result<()> {
 
     // 3. Diff against the filesystem and apply per the safety flags.
     let root = Path::new(".");
-    let recon = sync::reconcile(root, &plan)?;
-    let applied = sync::apply(root, &recon, flags.force, flags.dry_run)?;
-    // Format the Rust files sync just wrote, matching `gize new`/`make` output (ADR-020).
+    let mut recon = sync::reconcile(root, &plan)?;
+    // Format what sync is about to write, matching `gize new`/`make` output (ADR-020). Drift
+    // left in place (no `--force`) is not written, so it is not formatted either.
     if !flags.dry_run {
-        let written: Vec<std::path::PathBuf> = applied
-            .created
-            .iter()
-            .chain(applied.overwritten.iter())
-            .filter(|f| f.ends_with(".rs"))
-            .map(|f| root.join(f))
-            .collect();
-        gize_generator::format_rust_files(&written);
+        let drift = if flags.force {
+            &mut recon.drift[..]
+        } else {
+            &mut []
+        };
+        for op in recon.missing.iter_mut().chain(drift) {
+            op.contents = gize_generator::format_for_path(&op.path, &op.contents);
+        }
     }
+    let applied = sync::apply(root, &recon, flags.force, flags.dry_run)?;
     println!(
         "Reconciling from gize.toml:\n{}",
         applied.render(flags.dry_run)

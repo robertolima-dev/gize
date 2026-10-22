@@ -3,7 +3,7 @@
 //! `dry_run` is set.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -17,8 +17,8 @@ pub struct Options {
     pub force: bool,
     /// Compute and report actions but touch no files.
     pub dry_run: bool,
-    /// Run `rustfmt` over the `.rs` files written, so generated code is formatted the way the
-    /// toolchain would format it (ADR-020). Off by default (tests/snapshots pin the raw template
+    /// Pass the `.rs` files written through `rustfmt`, so generated code is formatted the way
+    /// the toolchain would format it (ADR-020). Off by default (tests/snapshots pin the raw template
     /// output); the CLI turns it on.
     pub format: bool,
 }
@@ -74,7 +74,6 @@ impl Writer {
     /// Apply a plan rooted at `root`. Relative op paths are resolved against `root`.
     pub fn apply(&self, root: &Path, plan: &Plan) -> Result<Report> {
         let mut report = Report::default();
-        let mut written_rs: Vec<PathBuf> = Vec::new();
 
         for op in &plan.ops {
             let path = root.join(&op.path);
@@ -99,11 +98,12 @@ impl Writer {
                             fs::create_dir_all(parent)
                                 .with_context(|| format!("creating parent for {display}"))?;
                         }
-                        fs::write(&path, &op.contents)
-                            .with_context(|| format!("writing {display}"))?;
-                        if display.ends_with(".rs") {
-                            written_rs.push(path.clone());
-                        }
+                        let contents = if self.opts.format {
+                            format_for_path(&op.path, &op.contents)
+                        } else {
+                            op.contents.clone()
+                        };
+                        fs::write(&path, contents).with_context(|| format!("writing {display}"))?;
                     }
 
                     if exists {
@@ -115,36 +115,33 @@ impl Writer {
             }
         }
 
-        if self.opts.format {
-            format_rust_files(&written_rs);
-        }
-
         Ok(report)
     }
 }
 
-/// Format `files` in place with `rustfmt`, using the generated projects' edition (2024).
+/// The contents to write at `path`: formatted with [`format_rust_str`] when it is a Rust file,
+/// unchanged otherwise.
 ///
-/// Best-effort (ADR-020): if `rustfmt` is missing or fails, the files are left as written —
-/// valid Rust, just unformatted — so generation never fails because of formatting. Keeping this
-/// at the write boundary lets the templates (and their snapshots) stay the raw, reviewed source
-/// while the code that lands on disk matches what `cargo fmt` would produce.
-pub fn format_rust_files(files: &[PathBuf]) {
-    if files.is_empty() {
-        return;
+/// Formatting happens at the write boundary (ADR-020), so the templates (and their snapshots)
+/// stay the raw, reviewed source while the code that lands on disk matches what `cargo fmt`
+/// would produce. It works on the text, never on the file: `rustfmt` given a path also formats
+/// every `mod x;` it declares, which would rewrite modules the caller chose to leave alone
+/// (`src/app/mod.rs` reaches every resource).
+pub fn format_for_path(path: &Path, contents: &str) -> String {
+    if path.extension().is_some_and(|ext| ext == "rs") {
+        format_rust_str(contents)
+    } else {
+        contents.to_string()
     }
-    let _ = Command::new("rustfmt")
-        .arg("--edition")
-        .arg("2024")
-        .args(files)
-        .status();
 }
 
-/// Format Rust source **text** with `rustfmt` (stdin → stdout), returning the canonical form.
+/// Format Rust source **text** with `rustfmt` (stdin → stdout), returning the canonical form,
+/// using the generated projects' edition (2024).
 ///
-/// Best-effort like [`format_rust_files`]: if `rustfmt` is missing or fails, the input is
-/// returned unchanged. Used by `gize sync` to compare a raw template against the formatted code
-/// the CLI wrote to disk (ADR-020), so a pure formatting difference is not reported as drift.
+/// Best-effort (ADR-020): if `rustfmt` is missing or fails, the input is returned unchanged —
+/// valid Rust, just unformatted — so generation never fails because of formatting. Also used by
+/// `gize sync` to compare a raw template against the formatted code the CLI wrote to disk, so a
+/// pure formatting difference is not reported as drift.
 pub fn format_rust_str(src: &str) -> String {
     use std::io::Write;
     use std::process::Stdio;
@@ -234,5 +231,30 @@ mod tests {
         let report = Writer::new(opts).apply(&root, &plan).unwrap();
         assert_eq!(report.created, vec!["a.txt".to_string()]);
         assert!(!root.join("a.txt").exists());
+    }
+
+    /// `rustfmt` given a file also formats the modules it declares. Formatting a written
+    /// `mod.rs` must not reach a sibling module the plan left alone (a hand-edited resource).
+    #[test]
+    fn formatting_touches_only_the_files_written() {
+        let rustfmt = Command::new("rustfmt").arg("--version").output();
+        if !rustfmt.is_ok_and(|o| o.status.success()) {
+            return;
+        }
+        let root = tmpdir();
+        let kept = "pub fn hand_edited( )->i32{ 42 }\n";
+        fs::write(root.join("child.rs"), kept).unwrap();
+        let plan = Plan::new().create("mod.rs", "mod child;\nfn  wired( ) {}\n");
+        let opts = Options {
+            force: false,
+            dry_run: false,
+            format: true,
+        };
+        Writer::new(opts).apply(&root, &plan).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("mod.rs")).unwrap(),
+            "mod child;\nfn wired() {}\n"
+        );
+        assert_eq!(fs::read_to_string(root.join("child.rs")).unwrap(), kept);
     }
 }
