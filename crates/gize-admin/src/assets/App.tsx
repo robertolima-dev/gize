@@ -9,17 +9,28 @@ import { titleCase } from "./api";
 import { Icon } from "./icons";
 import { currentTheme, toggleTheme, type Theme } from "./theme";
 
-const client = new QueryClient();
-
 type Editing = { desc: ResourceDesc; row: Record<string, any> | null };
 
 export default function App() {
   const auth = useAuth();
+  if (!auth.token) return <Login onLogin={auth.login} />;
+  // Keyed by the token: each sign-in mounts a fresh admin, with its own query cache and no form
+  // left open, so nothing the previous account loaded is shown to the next one.
+  return <Admin key={auth.token} onLogout={auth.logout} />;
+}
+
+function Admin({ onLogout }: { onLogout: () => void }) {
+  const [client] = useState(() => new QueryClient());
   const [theme, setThemeState] = useState<Theme>(currentTheme());
   const [activePath, setActivePath] = useState(resources[0]?.path ?? "");
   const [editing, setEditing] = useState<Editing | null>(null);
 
-  if (!auth.token) return <Login onLogin={auth.login} />;
+  function logout() {
+    // Requests still in flight would otherwise land in this session's cache after sign-out.
+    void client.cancelQueries();
+    client.clear();
+    onLogout();
+  }
 
   const current = resources.find((r) => r.path === activePath) ?? resources[0];
 
@@ -53,7 +64,7 @@ export default function App() {
               <small>Signed in</small>
             </span>
           </div>
-          <button className="iconbtn" title="Sign out" aria-label="Sign out" onClick={auth.logout}>
+          <button className="iconbtn" title="Sign out" aria-label="Sign out" onClick={logout}>
             <Icon name="logout" />
           </button>
         </header>

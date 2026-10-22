@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.8] - 2026-10-22
+
+### Fixed
+
+- **Admin: the next account saw what the previous one loaded.** The admin kept one query cache
+  for the life of the page, keyed only by resource. After an admin signed out and a non-admin
+  signed in, opening Users showed the admin's user list, and it stayed on screen after the
+  API answered 403. A form left open also survived the change of account. Each sign-in now
+  starts a fresh admin (its own query cache, no open form, first resource selected), and
+  signing out cancels pending requests and clears the cache. Existing projects get the fix by
+  replacing `admin/src/App.tsx` with the one a 0.9.8 project generates (`gize sync --force`
+  does it too, but it overwrites every drifted file, so use it only when `gize sync --dry-run`
+  lists that file alone).
+
 ## [0.9.7] - 2026-10-22
 
 ### Fixed
