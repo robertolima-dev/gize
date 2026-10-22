@@ -166,6 +166,7 @@ pub fn new_project(
         // reconcile/rebuild it from the manifest alone (ADR-009 revision).
         manifest.upsert_module(Module {
             name: "users".to_string(),
+            model: None,
             fields: user::spec().to_field_tokens(),
             belongs_to: Vec::new(),
         });

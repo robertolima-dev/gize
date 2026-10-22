@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [0.9.6] - 2026-10-22
+
+### Fixed
+
+- **`gize sync` renamed models whose plural ends in `-ies` from `-ie`.** `gize make crud Movie`
+  creates the `movies` module, and `sync` derived the struct name back from it as `Movy`:
+  `sync --dry-run` reported five files as drift on an untouched project, and `sync --force`
+  rewrote them as `struct Movy`, breaking code that used `Movie`. `make crud` now records the
+  struct name in `gize.toml` (`model = "Movie"`) whenever the module name does not lead back
+  to it, and `sync` uses the recorded name. Manifests of models that already round-trip
+  (`Post`, `Category`, `Box`) are unchanged. A manifest whose `model` would not produce its
+  module's table is rejected before anything is written.
+
 ## [0.9.5] - 2026-10-21
 
 Documentation only; no change to the CLI or generated code.

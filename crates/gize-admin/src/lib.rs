@@ -438,6 +438,7 @@ mod tests {
         let mut m = Manifest::new("blog");
         m.upsert_module(Module {
             name: "users".to_string(),
+            model: None,
             fields: vec![
                 "name:String".to_string(),
                 "email:String".to_string(),
@@ -448,6 +449,7 @@ mod tests {
         });
         m.upsert_module(Module {
             name: "posts".to_string(),
+            model: None,
             fields: vec!["title:String".to_string()],
             belongs_to: vec![Relation {
                 field: "author".to_string(),

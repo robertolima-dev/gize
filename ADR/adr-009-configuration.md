@@ -103,6 +103,10 @@ fields = ["title:String", "body:String", "published:bool"]
   so the manifest and the command line share one definition of a model.
 - **`belongs_to`** records 1-N relationships (ADR-014); the referenced module must also be in
   the manifest (validated on load).
+- **`model`** (optional, since 0.9.6) records the struct name when it cannot be derived from
+  the module name: `Movie` -> `movies` would read back as `Movy`, so that module carries
+  `model = "Movie"`. Absent, the name is derived (`posts` -> `Post`), as before. A recorded
+  name must produce the module's table.
 - **Backward compatibility:** the loader still accepts the legacy `[modules] list = [...]`
   form (each name becomes a module with no fields) and rewrites into the new `[[module]]`
   form on the next write. A project generated before this revision keeps working; the first

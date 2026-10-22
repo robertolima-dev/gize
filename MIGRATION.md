@@ -188,6 +188,22 @@ No API change. Two fixes you can adopt by hand without regenerating:
 - If the project has an admin, `gize sync --force` (or `gize make admin --force`) picks up the
   label fixes.
 
+### → 0.9.6 — the model name is recorded in `gize.toml`
+
+`gize make crud` now writes `model = "..."` to a module when its struct name cannot be derived
+from the module name, so `gize sync` regenerates `Movie` instead of `Movy`. The CLI fills it in
+when it creates or updates a module; a project created before 0.9.6 with such a model (the
+module name ends in `ies` but the model ends in `ie`: `Movie`, `Cookie`, `Zombie`) needs it
+added once by hand before running `sync`:
+
+```toml
+[[module]]
+name = "movies"
+model = "Movie"
+```
+
+Nothing else changes: other manifests stay valid as they are.
+
 ## If an upgrade breaks something
 
 If `gize sync` proposes to overwrite a file you did **not** ask it to, or a compatible upgrade

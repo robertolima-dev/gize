@@ -12,7 +12,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::naming::model_name;
+use crate::naming::{model_name, table_name};
 use crate::{ModelSpec, Relation};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,12 +100,16 @@ pub struct Features {
 /// One application module as recorded in `gize.toml` (ADR-009 revision).
 ///
 /// `name` is the module/table name as used on disk (snake_case, e.g. `users`, `products`).
+/// `model` is the struct name, recorded only when it cannot be derived back from `name`
+/// (`Movie` -> `movies` would read back as `Movy`); see [`Module::model_name`].
 /// `fields` reuse the CLI's `name:Type` grammar verbatim (see [`crate::field`]) so the
 /// manifest and the command line share one definition of a model. `belongs_to` records the
 /// module's 1-N relationships (ADR-014).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Module {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -118,14 +122,35 @@ impl Module {
     pub fn named(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
+            model: None,
             fields: Vec::new(),
             belongs_to: Vec::new(),
         }
     }
 
+    /// The module recorded for `model`, as `gize make crud` writes it to the manifest. The
+    /// struct name is stored only when deriving it from the table name would not give it back,
+    /// so manifests of models that round-trip (`Post` -> `posts`) stay as they were.
+    pub fn for_model(model: &ModelSpec) -> Self {
+        let name = table_name(&model.name);
+        let derived = model_name(&name);
+        Self {
+            model: (derived != model.name).then(|| model.name.clone()),
+            name,
+            fields: model.to_field_tokens(),
+            belongs_to: model.relations.clone(),
+        }
+    }
+
+    /// The model's struct name: the recorded `model`, or else derived from the module/table
+    /// name (`posts` -> `Post`), which is what manifests written before `model` existed rely on.
+    pub fn model_name(&self) -> String {
+        self.model.clone().unwrap_or_else(|| model_name(&self.name))
+    }
+
     /// Recover the model definition this module describes, for regenerating its code during
-    /// `gize sync` (ADR-009 revision). The struct name is derived from the module/table name
-    /// (`posts` -> `Post`); the fields are re-parsed from their `name:Type` tokens.
+    /// `gize sync` (ADR-009 revision). The struct name comes from [`Module::model_name`]; the
+    /// fields are re-parsed from their `name:Type` tokens.
     pub fn model_spec(&self) -> Result<ModelSpec> {
         crate::validation::validate_identifier(&self.name, "module")?;
         // Feed the scalar field tokens plus a `name:belongs_to:target` token per relationship,
@@ -133,7 +158,7 @@ impl Module {
         // at `make crud` time.
         let mut tokens = self.fields.clone();
         tokens.extend(self.belongs_to.iter().map(Relation::to_token));
-        ModelSpec::parse(model_name(&self.name), &tokens)
+        ModelSpec::parse(self.model_name(), &tokens)
             .with_context(|| format!("module `{}` has an invalid field definition", self.name))
     }
 }
@@ -207,6 +232,19 @@ impl Manifest {
                 module.name
             );
             crate::validation::validate_identifier(&module.name, "module")?;
+            if let Some(model) = &module.model {
+                // The templates derive the table, routes and paths from the struct name, so a
+                // recorded name must lead back to this module.
+                anyhow::ensure!(
+                    table_name(model) == module.name,
+                    "module `{}` in gize.toml records model `{model}`, whose table would be `{}`; \
+                     the model of `{}` must be named so its table is `{}`",
+                    module.name,
+                    table_name(model),
+                    module.name,
+                    module.name
+                );
+            }
             if !module.fields.is_empty() || !module.belongs_to.is_empty() {
                 let dialect = crate::Dialect::from_database(&self.stack.database);
                 // Every generation command validates the whole manifest, so an older module
@@ -327,6 +365,7 @@ mod tests {
         m.features.admin = true;
         m.upsert_module(Module {
             name: "products".to_string(),
+            model: None,
             fields: vec!["name:String".to_string(), "price:i32".to_string()],
             belongs_to: vec![],
         });
@@ -340,6 +379,7 @@ mod tests {
         let mut m = Manifest::new("blog");
         m.upsert_module(Module {
             name: "posts".to_string(),
+            model: None,
             fields: vec!["title:String".to_string()],
             belongs_to: vec![Relation {
                 field: "author".to_string(),
@@ -366,6 +406,7 @@ mod tests {
         assert!(m.add_module("products")); // empty shape first
         assert!(!m.upsert_module(Module {
             name: "products".to_string(),
+            model: None,
             fields: vec!["name:String".to_string()],
             belongs_to: vec![],
         }));
@@ -401,6 +442,7 @@ mod tests {
         // Declared out of dependency order and alphabetically: comments -> posts -> users.
         m.upsert_module(Module {
             name: "comments".to_string(),
+            model: None,
             fields: vec!["body:String".to_string()],
             belongs_to: vec![Relation {
                 field: "post".to_string(),
@@ -409,6 +451,7 @@ mod tests {
         });
         m.upsert_module(Module {
             name: "posts".to_string(),
+            model: None,
             fields: vec!["title:String".to_string()],
             belongs_to: vec![Relation {
                 field: "author".to_string(),
@@ -439,6 +482,7 @@ mod tests {
         let mut m = Manifest::new("loop");
         m.upsert_module(Module {
             name: "a".to_string(),
+            model: None,
             fields: vec![],
             belongs_to: vec![Relation {
                 field: "b".to_string(),
@@ -447,6 +491,7 @@ mod tests {
         });
         m.upsert_module(Module {
             name: "b".to_string(),
+            model: None,
             fields: vec![],
             belongs_to: vec![Relation {
                 field: "a".to_string(),
@@ -511,11 +556,46 @@ mod tests {
             "[[module]]\nname='../posts'",
             "[[module]]\nname='posts'\n[[module]]\nname='posts'",
             "[modules]\nlist=['mod']",
+            "[[module]]\nname='movies'\nmodel='Film'\nfields=['title:String']",
+            "[[module]]\nname='movies'\nmodel='movie'\nfields=['title:String']",
         ] {
             let text = format!("[project]\nname='test'\n{body}");
             let manifest = Manifest::from_toml(&text).unwrap();
             assert!(manifest.validate().is_err(), "accepted {body}");
             assert!(manifest.to_toml().is_ok());
         }
+    }
+
+    #[test]
+    fn records_the_model_name_only_when_it_does_not_round_trip() {
+        let spec = |name: &str| ModelSpec::parse(name, &["title:String".to_string()]).unwrap();
+
+        // `movies` reads back as `Movy`, so the struct name is recorded and wins.
+        let movie = Module::for_model(&spec("Movie"));
+        assert_eq!(movie.name, "movies");
+        assert_eq!(movie.model.as_deref(), Some("Movie"));
+        assert_eq!(movie.model_spec().unwrap().name, "Movie");
+
+        // Names that round-trip keep the manifest as it was before `model` existed.
+        for name in ["Post", "Category", "Box", "BlogPost", "Status"] {
+            let module = Module::for_model(&spec(name));
+            assert_eq!(module.model, None, "{name}");
+            assert_eq!(module.model_spec().unwrap().name, name);
+        }
+
+        let mut m = Manifest::new("films");
+        m.upsert_module(movie.clone());
+        let text = m.to_toml().unwrap();
+        assert!(text.contains("model = \"Movie\""));
+        let back = Manifest::from_toml(&text).unwrap();
+        back.validate().unwrap();
+        assert_eq!(back.module("movies"), Some(&movie));
+
+        // A manifest written before `model` existed still derives the name.
+        let legacy = Manifest::from_toml(
+            "[project]\nname='blog'\n[[module]]\nname='posts'\nfields=['title:String']",
+        )
+        .unwrap();
+        assert_eq!(legacy.modules[0].model_spec().unwrap().name, "Post");
     }
 }

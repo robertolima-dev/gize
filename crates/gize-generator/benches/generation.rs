@@ -29,6 +29,7 @@ fn manifest_with_modules() -> Manifest {
     for name in ["users", "products", "orders", "customers"] {
         m.upsert_module(Module {
             name: name.to_string(),
+            model: None,
             fields: vec!["name:String".to_string(), "amount:i64".to_string()],
             belongs_to: Vec::new(),
         });

@@ -268,14 +268,7 @@ pub fn make_crud(name: &str, fields: &[String], flags: GenFlags) -> Result<()> {
     );
 
     register_in_app_mod(&module, flags)?;
-    record_module_in_manifest(
-        Module {
-            name: module.clone(),
-            fields: model.to_field_tokens(),
-            belongs_to: model.relations.clone(),
-        },
-        flags,
-    )?;
+    record_module_in_manifest(Module::for_model(&model), flags)?;
     refresh_openapi_if_enabled(flags)?;
 
     if !flags.dry_run {

@@ -663,6 +663,7 @@ fn record_products_in_manifest(root: &Path) {
     let mut manifest = gize_core::Manifest::from_toml(&fs::read_to_string(&path).unwrap()).unwrap();
     manifest.upsert_module(gize_core::Module {
         name: "products".to_string(),
+        model: None,
         fields: product_model().to_field_tokens(),
         belongs_to: Vec::new(),
     });
