@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [1.0.0-rc.2] - 2026-10-23
+
+### Fixed
+
+- **Admin: "Delete selected" deleted without asking.** Deleting one row from its form asks
+  "Delete this product? This cannot be undone.", but the bulk action sent every delete on the
+  first click. It now asks the same way ("Delete 3 products? This cannot be undone.") and sends
+  nothing if cancelled. Found while validating the published rc.1. Existing projects get it by
+  replacing `admin/src/Resource.tsx` with the one an rc.2 project generates (`gize sync --force`
+  overwrites every drifted file, so use it only when `gize sync --dry-run` lists that file
+  alone).
+
 ## [1.0.0-rc.1] - 2026-10-23
 
 The first release candidate for 1.0. The surface in [STABILITY.md](./STABILITY.md) is what 1.0

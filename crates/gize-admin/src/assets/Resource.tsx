@@ -175,7 +175,15 @@ export function Resource({
               <button className="btn sm" onClick={() => setSelected(new Set())}>
                 Clear
               </button>
-              <button className="btn sm danger" onClick={() => remove.mutate([...selected])}>
+              <button
+                className="btn sm danger"
+                onClick={() => {
+                  // Same guard as deleting one row from its form: nothing is sent unless confirmed.
+                  const what =
+                    selected.size === 1 ? `this ${nounOf(desc.name)}` : `${selected.size} ${desc.path}`;
+                  if (confirm(`Delete ${what}? This cannot be undone.`)) remove.mutate([...selected]);
+                }}
+              >
                 <Icon name="trash" />
                 Delete selected
               </button>

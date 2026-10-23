@@ -7,7 +7,7 @@ members = ["crates/*", "examples/gize-healthcheck"]
 exclude = ["examples/gize-chat"]
 
 [workspace.package]
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/robertolima-dev/gize"
@@ -17,13 +17,13 @@ rust-version = "1.85"
 # Internal crates are pinned exactly: their Rust APIs are not stable (STABILITY.md), and a caret
 # requirement on a pre-release (`^1.0.0-rc.1`) also accepts rc.2 and 1.0.0, so a CLI installed
 # without --locked could build against newer gize-* crates than it was released with.
-gize-core = { path = "crates/gize-core", version = "=1.0.0-rc.1" }
-gize-generator = { path = "crates/gize-generator", version = "=1.0.0-rc.1" }
-gize-templates = { path = "crates/gize-templates", version = "=1.0.0-rc.1" }
-gize-db = { path = "crates/gize-db", version = "=1.0.0-rc.1" }
-gize-macros = { path = "crates/gize-macros", version = "=1.0.0-rc.1" }
-gize-openapi = { path = "crates/gize-openapi", version = "=1.0.0-rc.1" }
-gize-admin = { path = "crates/gize-admin", version = "=1.0.0-rc.1" }
+gize-core = { path = "crates/gize-core", version = "=1.0.0-rc.2" }
+gize-generator = { path = "crates/gize-generator", version = "=1.0.0-rc.2" }
+gize-templates = { path = "crates/gize-templates", version = "=1.0.0-rc.2" }
+gize-db = { path = "crates/gize-db", version = "=1.0.0-rc.2" }
+gize-macros = { path = "crates/gize-macros", version = "=1.0.0-rc.2" }
+gize-openapi = { path = "crates/gize-openapi", version = "=1.0.0-rc.2" }
+gize-admin = { path = "crates/gize-admin", version = "=1.0.0-rc.2" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

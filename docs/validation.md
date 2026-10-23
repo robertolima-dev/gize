@@ -13,8 +13,8 @@ When you're done, please file a report using the **RC validation report** issue 
 - Install the CLI **from crates.io** (a cold install — this is part of what we're validating):
 
   ```sh
-  cargo install gize --locked --version 1.0.0-rc.1
-  gize --version            # gize 1.0.0-rc.1
+  cargo install gize --locked --version 1.0.0-rc.2
+  gize --version            # gize 1.0.0-rc.2
   ```
 
   `--version` is needed: cargo never picks a pre-release on its own, so a plain
@@ -137,7 +137,7 @@ cargo test                # the generated tests compile and pass
 
 ## Acceptance checklist
 
-- [ ] Cold `cargo install gize --locked --version 1.0.0-rc.1` worked.
+- [ ] Cold `cargo install gize --locked --version 1.0.0-rc.2` worked.
 - [ ] Scaffolding + `make crud` (incl. a `belongs_to`) produced a compiling project.
 - [ ] `migrate`, `createadmin`, `serve` worked end to end.
 - [ ] Auth matrix matched: 401 without a token, 403 for a non-admin on `users`, 200 for an admin,

@@ -73,11 +73,11 @@ What you get is normal Rust you can read and edit: Gize writes the boring 80%, y
 
 ## Project status
 
-**Release candidate (1.0.0-rc.1).** Every 1.0 feature is in, and the 1.0 feature set has been
+**Release candidate (1.0.0-rc.2).** Every 1.0 feature is in, and the 1.0 feature set has been
 frozen since 0.8.0: releases now harden what exists instead of adding to it. What remains before
 1.0.0 is outside validation: someone outside the core team building an app on the release
 candidate ([`docs/validation.md`](./docs/validation.md)). Install the candidate with
-`cargo install gize --locked --version 1.0.0-rc.1`; without `--version`, cargo installs the
+`cargo install gize --locked --version 1.0.0-rc.2`; without `--version`, cargo installs the
 latest stable 0.9.x. New frameworks such as Actix are planned for v2.0.
 
 See [`STABILITY.md`](./STABILITY.md) for what is stable and the deprecation policy,

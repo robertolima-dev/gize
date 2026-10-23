@@ -520,6 +520,17 @@ mod tests {
     }
 
     #[test]
+    fn bulk_delete_asks_before_deleting_like_a_single_delete() {
+        let resource = resource_tsx();
+        assert!(resource.contains(
+            "if (confirm(`Delete ${what}? This cannot be undone.`)) remove.mutate([...selected]);"
+        ));
+        // The only call that sends the batch is the confirmed one.
+        assert_eq!(resource.matches("remove.mutate(").count(), 1);
+        assert!(resource_form_tsx().contains("This cannot be undone."));
+    }
+
+    #[test]
     fn labels_read_as_words_and_foreign_keys_explain_themselves() {
         let api = api_ts();
         assert!(api.contains(r#"s.replace(/_/g, " ")"#));
