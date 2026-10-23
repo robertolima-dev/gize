@@ -1,7 +1,14 @@
-//! Authentication: Argon2id password hashing + stateless JWT (HS256). See gize ADR-013.
+//! Authentication: Argon2id password hashing + stateless JWT (HS256). See gize ADR-013/ADR-021.
 //!
 //! The signing secret comes from the `GIZE_JWT_SECRET` environment variable. Tokens are
-//! stateless (no server-side session), so they are valid until they expire.
+//! stateless (no server-side session), so they are valid until they expire. The token also
+//! carries an `is_admin` claim, which `require_admin` uses to gate admin-only routes.
+
+// This module is a provided toolkit: depending on which resources you generate, some helpers
+// may not be called yet (a project with no `users` resource issues no tokens and hashes no
+// passwords; one with no generic CRUD never calls `require_auth`). Allowed to have unused items
+// so any project shape stays clippy-clean under `-D warnings`; delete what you do not need.
+#![allow(dead_code)]
 
 use argon2::Argon2;
 use argon2::password_hash::rand_core::OsRng;
@@ -11,7 +18,9 @@ use axum::http::{StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Semaphore;
 
 /// How long an issued token stays valid. Kept short since stateless JWTs cannot be revoked.
 const TOKEN_TTL_SECS: u64 = 24 * 60 * 60;
@@ -21,6 +30,8 @@ const TOKEN_TTL_SECS: u64 = 24 * 60 * 60;
 pub enum AuthError {
     /// Missing, malformed, or expired credentials.
     Unauthorized,
+    /// Authenticated but not allowed — e.g. a non-admin calling an admin-only route.
+    Forbidden,
     /// `GIZE_JWT_SECRET` is not set — a server misconfiguration, not the client's fault.
     MissingSecret,
     /// An internal hashing/signing failure.
@@ -31,6 +42,7 @@ impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AuthError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::MissingSecret => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "authentication is misconfigured",
@@ -60,10 +72,72 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
     }
 }
 
-/// JWT claims: the subject (user id), issued-at and expiry (seconds since the Unix epoch).
-#[derive(Debug, Serialize, Deserialize)]
+/// Bounds how many Argon2 computations run at once. Each one takes tens of milliseconds of CPU
+/// and about 19 MiB of memory, so a burst of logins could otherwise use every core and a lot of
+/// RAM. Half the available cores (at least one) leaves the rest for other requests; change the
+/// number here if your service mostly does authentication.
+fn hashing_permits() -> Arc<Semaphore> {
+    static PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    PERMITS
+        .get_or_init(|| {
+            let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+            Arc::new(Semaphore::new((cores / 2).max(1)))
+        })
+        .clone()
+}
+
+/// Run CPU-heavy password work on Tokio's blocking pool, at most `hashing_permits()` at a time,
+/// so request handlers never block the async worker threads.
+async fn run_password_work<T, F>(work: F) -> Result<T, AuthError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    run_limited(hashing_permits(), work).await
+}
+
+/// Run `work` on the blocking pool once `permits` has a slot. The permit moves into the blocking
+/// task: if the request is cancelled (the client disconnects mid-login), the work still runs to
+/// the end, so its slot must stay taken until then.
+async fn run_limited<T, F>(permits: Arc<Semaphore>, work: F) -> Result<T, AuthError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let permit = permits
+        .acquire_owned()
+        .await
+        .map_err(|_| AuthError::Internal)?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|_| AuthError::Internal)
+}
+
+/// [`hash_password`] for async code: use this in request handlers.
+pub async fn hash_password_async(password: String) -> Result<String, AuthError> {
+    run_password_work(move || hash_password(&password)).await?
+}
+
+/// [`verify_password`] for async code: use this in request handlers. A failure to schedule the
+/// work counts as a failed verification.
+pub async fn verify_password_async(password: String, hash: String) -> bool {
+    run_password_work(move || verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
+}
+
+/// JWT claims: the subject (user id), the admin flag, issued-at and expiry (seconds since the
+/// Unix epoch). `is_admin` is captured at login so `require_admin` needs no per-request DB read.
+///
+/// `require_auth` stores the validated `Claims` in the request extensions, so a guarded handler
+/// can read the caller's identity with `Extension<Claims>` (see the `users` `me` route).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+    pub is_admin: bool,
     pub iat: u64,
     pub exp: u64,
 }
@@ -79,11 +153,12 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// Issue a signed JWT for a user id.
-pub fn issue_token(user_id: &uuid::Uuid) -> Result<String, AuthError> {
+/// Issue a signed JWT for a user id, embedding whether the user is an admin.
+pub fn issue_token(user_id: &uuid::Uuid, is_admin: bool) -> Result<String, AuthError> {
     let now = now_secs();
     let claims = Claims {
         sub: user_id.to_string(),
+        is_admin,
         iat: now,
         exp: now + TOKEN_TTL_SECS,
     };
@@ -115,8 +190,29 @@ fn bearer_claims(req: &Request) -> Result<Claims, AuthError> {
 
 /// Axum middleware that rejects unauthenticated requests. Apply it with
 /// `.route_layer(axum::middleware::from_fn(require_auth))` on the routes you want to protect.
-pub async fn require_auth(req: Request, next: Next) -> Result<Response, AuthError> {
-    bearer_claims(&req)?;
+/// The default `users` slice uses `require_admin`; generic `make crud` resources use this.
+///
+/// The validated `Claims` are inserted into the request extensions, so a guarded handler can
+/// recover the caller's identity with `Extension<Claims>` (e.g. the `users` `me` self-service
+/// route).
+pub async fn require_auth(mut req: Request, next: Next) -> Result<Response, AuthError> {
+    let claims = bearer_claims(&req)?;
+    req.extensions_mut().insert(claims);
+    Ok(next.run(req).await)
+}
+
+/// Axum middleware that requires the caller to be an admin. Rejects with `401` when the token
+/// is missing/invalid/expired and `403` when the caller is authenticated but not an admin.
+/// Apply it with `.route_layer(axum::middleware::from_fn(require_admin))`.
+///
+/// The admin flag comes from the token (set at login), so a token stays admin until it expires
+/// even if the account's `is_admin` later changes — the usual stateless-JWT trade-off, kept
+/// small by the short `TOKEN_TTL_SECS`.
+pub async fn require_admin(req: Request, next: Next) -> Result<Response, AuthError> {
+    let claims = bearer_claims(&req)?;
+    if !claims.is_admin {
+        return Err(AuthError::Forbidden);
+    }
     Ok(next.run(req).await)
 }
 
@@ -131,14 +227,53 @@ mod tests {
         assert!(!verify_password("wrong", &hash));
     }
 
+    #[tokio::test]
+    async fn async_password_helpers_match_the_sync_ones() {
+        let hash = hash_password_async("s3cr3t".to_string()).await.unwrap();
+        assert!(verify_password_async("s3cr3t".to_string(), hash.clone()).await);
+        assert!(!verify_password_async("wrong".to_string(), hash).await);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_request_keeps_its_slot_until_the_work_ends() {
+        let permits = Arc::new(Semaphore::new(1));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel::<()>();
+        let request = tokio::spawn(run_limited(permits.clone(), move || {
+            started_tx.send(()).unwrap();
+            finish_rx.recv().unwrap();
+        }));
+        tokio::task::spawn_blocking(move || started_rx.recv().unwrap())
+            .await
+            .unwrap();
+
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert_eq!(permits.available_permits(), 0, "the work is still running");
+
+        finish_tx.send(()).unwrap();
+        let _slot = tokio::time::timeout(std::time::Duration::from_secs(5), permits.acquire())
+            .await
+            .expect("the slot is released when the work ends");
+    }
+
     #[test]
     fn token_roundtrip() {
         // SAFETY: test-only; sets the secret for this process.
         unsafe { std::env::set_var("GIZE_JWT_SECRET", "test-secret") };
         let id = uuid::Uuid::new_v4();
-        let token = issue_token(&id).unwrap();
+        let token = issue_token(&id, false).unwrap();
         let claims = verify_token(&token).unwrap();
         assert_eq!(claims.sub, id.to_string());
+        assert!(!claims.is_admin);
         assert!(verify_token("not-a-token").is_err());
+    }
+
+    #[test]
+    fn admin_flag_travels_in_token() {
+        // SAFETY: test-only; sets the secret for this process.
+        unsafe { std::env::set_var("GIZE_JWT_SECRET", "test-secret") };
+        let token = issue_token(&uuid::Uuid::new_v4(), true).unwrap();
+        assert!(verify_token(&token).unwrap().is_admin);
     }
 }

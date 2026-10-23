@@ -3,9 +3,20 @@ use sqlx::SqlitePool;
 use super::dto::{CreateUser, UpdateUser};
 use super::model::User;
 
-pub async fn list(pool: &SqlitePool) -> Result<Vec<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>("SELECT * FROM users ORDER BY created_at DESC")
-        .fetch_all(pool)
+/// One page of rows, newest first. `id` breaks ties so the order is stable across pages.
+pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        "SELECT * FROM users ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
         .await
 }
 

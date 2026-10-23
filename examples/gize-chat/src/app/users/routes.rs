@@ -1,23 +1,35 @@
-use axum::routing::{get, post, put};
+use axum::routing::{get, post};
 use axum::{Router, middleware};
 
 use super::handler;
-use crate::auth::require_auth;
+use crate::auth::{require_admin, require_auth};
 use crate::state::AppState;
 
-/// Routes for the `users` resource. `register`/`login` and reads are public; writes require
-/// a valid bearer token.
+/// Routes for the `users` resource. `register`/`login` are public; `GET /users/me` is
+/// self-service (any authenticated user reads their own record); every other route — including
+/// reads of arbitrary users — requires an **admin** bearer token (ADR-021).
+///
+/// `/users/me` is a static segment, so it takes precedence over the `/users/:id` param route
+/// even though they are declared on different sub-routers.
 pub fn routes() -> Router<AppState> {
     let public = Router::new()
         .route("/users/register", post(handler::register))
-        .route("/users/login", post(handler::login))
-        .route("/users", get(handler::list))
-        .route("/users/:id", get(handler::show));
+        .route("/users/login", post(handler::login));
 
-    let protected = Router::new()
-        .route("/users", post(handler::create))
-        .route("/users/:id", put(handler::update).delete(handler::delete))
+    // Self-service: any authenticated caller can read their own record via the token's `sub`.
+    let authed = Router::new()
+        .route("/users/me", get(handler::me))
         .route_layer(middleware::from_fn(require_auth));
 
-    public.merge(protected)
+    let admin = Router::new()
+        .route("/users", get(handler::list).post(handler::create))
+        .route(
+            "/users/:id",
+            get(handler::show)
+                .put(handler::update)
+                .delete(handler::delete),
+        )
+        .route_layer(middleware::from_fn(require_admin));
+
+    public.merge(authed).merge(admin)
 }

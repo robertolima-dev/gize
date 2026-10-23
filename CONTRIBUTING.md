@@ -95,4 +95,7 @@ information.
 
 Maintainers release from `main`: the version is bumped in the workspace `Cargo.toml`, the
 changelog section is dated, and a `vX.Y.Z` tag triggers `release.yml`, which reruns the full CI
-and publishes the crates to crates.io in dependency order.
+and publishes the crates to crates.io in dependency order with `scripts/publish.sh`. The script
+refuses a tag that doesn't match the workspace version and skips crates already published at
+that version, so a release that failed halfway is finished by re-running the workflow.
+`DRY_RUN=1 scripts/publish.sh` shows what it would publish.

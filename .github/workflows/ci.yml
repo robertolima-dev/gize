@@ -83,6 +83,77 @@ jobs:
 
           echo "OK: generated apps are rustfmt-clean and type-check on postgres, sqlite and mysql"
 
+  # The generated admin SPA (ADR-006) is part of the stable surface, and Rust checks never
+  # compile it: `pnpm build` runs `tsc --noEmit` and `vite build`. pnpm 10 and 11 read the
+  # esbuild build approval from different keys, and pnpm 11 fails the install without it.
+  admin:
+    name: generated admin · tsc + vite build (pnpm ${{ matrix.pnpm }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pnpm: ["10", "11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ matrix.pnpm }}
+      - run: cargo build -p gize
+      - name: Generate an app with relationships and its admin, then install and build it
+        run: |
+          set -euo pipefail
+          GIZE="$PWD/target/debug/gize"
+          WORK="$(mktemp -d)"; cd "$WORK"
+          "$GIZE" new shop --database sqlite
+          cd shop
+          "$GIZE" make crud Product name:String price:i32 active:bool
+          "$GIZE" make crud Review body:String product:belongs_to:products author:belongs_to:users
+          "$GIZE" make admin
+          cd admin
+          pnpm install
+          pnpm build
+
+  # The reference app is outside the workspace, so the jobs above never build it. It must pass
+  # its own checks, and its drift from the current generator must be exactly the hand edits its
+  # README lists: any other drifted file means the example fell behind the templates.
+  example-chat:
+    name: example · gize-chat
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            examples/gize-chat
+      - run: cargo build -p gize
+      - name: fmt · clippy · test
+        working-directory: examples/gize-chat
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+      - name: Drift from the current generator is only the documented hand edits
+        working-directory: examples/gize-chat
+        run: |
+          set -euo pipefail
+          drift="$(../../target/debug/gize sync --dry-run | awk '$1 == "drift" {print $2}' | sort | tr '\n' ' ')"
+          expected="src/app/ws/handler.rs src/app/ws/message.rs src/app/ws/routes.rs "
+          if [ "$drift" != "$expected" ]; then
+            echo "drifted:  $drift"
+            echo "expected: $expected"
+            echo "Regenerate the example with the current gize and re-apply the hand edits."
+            exit 1
+          fi
+
   bench:
     name: benchmarks · generation speed (informational)
     runs-on: ubuntu-latest

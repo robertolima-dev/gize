@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, labelOf, titleCase } from "./api";
+import { api, labelOf, nounOf, statusOf, titleCase } from "./api";
 import { Icon } from "./icons";
 import { toast } from "./toast";
 import type { FieldDesc, ResourceDesc } from "./resources";
@@ -25,6 +25,12 @@ function RefCell({ resource, id }: { resource: string; id: string }) {
   const { data } = useQuery<Row[]>({ queryKey: [resource], queryFn: () => api.list(resource) });
   const row = (data ?? []).find((r) => r.id === id);
   return row ? <span>{labelOf(row)}</span> : <span className="id">{shortId(id)}</span>;
+}
+
+/** What to show when a list could not be loaded. */
+function loadError(path: string, error: unknown): string {
+  if (statusOf(error) === 403) return `You don't have permission to see ${path}.`;
+  return `Couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 function Cell({ field, value }: { field: FieldDesc; value: unknown }) {
@@ -69,14 +75,34 @@ export function Resource({
   const list = useQuery<Row[]>({ queryKey: [desc.path], queryFn: () => api.list(desc.path) });
   const items = list.data ?? [];
 
+  // Each delete settles on its own: when some fail, the others are still gone, so the list is
+  // always refreshed and only the rows that failed stay selected, ready to retry.
   const remove = useMutation({
-    mutationFn: (ids: string[]) => Promise.all(ids.map((id) => api.remove(desc.path, id))),
-    onSuccess: (_r, ids) => {
-      qc.invalidateQueries({ queryKey: [desc.path] });
-      setSelected(new Set());
-      toast(ids.length > 1 ? `Deleted ${ids.length} ${desc.path}` : "Deleted");
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => api.remove(desc.path, id)));
+      // An expired session fails the whole batch: rethrow it so the admin signs out.
+      const expired = results.find((r) => r.status === "rejected" && statusOf(r.reason) === 401);
+      if (expired) throw (expired as PromiseRejectedResult).reason;
+      const failed = ids.filter((_, i) => results[i].status === "rejected");
+      const firstError = results.find((r) => r.status === "rejected") as
+        | PromiseRejectedResult
+        | undefined;
+      return { deleted: ids.length - failed.length, failed, error: firstError?.reason };
+    },
+    onSuccess: ({ deleted, failed, error }, ids) => {
+      setSelected(new Set(failed));
+      if (failed.length === 0) {
+        toast(ids.length > 1 ? `Deleted ${ids.length} ${desc.path}` : "Deleted");
+      } else if (deleted === 0) {
+        toast(String(error));
+      } else {
+        toast(
+          `Deleted ${deleted} of ${ids.length} ${desc.path}; ${failed.length} failed: ${String(error)}`,
+        );
+      }
     },
     onError: (e) => toast(String(e)),
+    onSettled: () => qc.invalidateQueries({ queryKey: [desc.path] }),
   });
 
   const filtered = useMemo(() => {
@@ -119,7 +145,7 @@ export function Resource({
         <span className="spacer" />
         <button className="btn primary" onClick={onAdd}>
           <Icon name="plus" />
-          Add {desc.name.toLowerCase()}
+          Add {nounOf(desc.name)}
         </button>
       </div>
 
@@ -209,7 +235,13 @@ export function Resource({
             {shown.length === 0 && (
               <div className="empty">
                 <Icon name="inbox" />
-                <div>{list.isLoading ? "Loading…" : `No ${desc.path} yet.`}</div>
+                <div>
+                  {list.isLoading
+                    ? "Loading…"
+                    : list.isError
+                      ? loadError(desc.path, list.error)
+                      : `No ${desc.path} yet.`}
+                </div>
               </div>
             )}
           </div>

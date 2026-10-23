@@ -1,17 +1,23 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use validator::Validate;
 
-use super::dto::{CreateMessage, UpdateMessage};
+use super::dto::{CreateMessage, ListParams, Page, UpdateMessage};
 use super::error::Error;
 use super::model::Message;
 use super::service;
 use crate::state::AppState;
 
-pub async fn list(State(state): State<AppState>) -> Result<Json<Vec<Message>>, Error> {
-    let items = service::list(&state.db).await?;
-    Ok(Json(items))
+/// `GET /messages?page=&per_page=`. Invalid paging parameters are a 422, like other input.
+pub async fn list(
+    State(state): State<AppState>,
+    params: Result<Query<ListParams>, QueryRejection>,
+) -> Result<Json<Page<Message>>, Error> {
+    let Query(params) = params.map_err(|rejection| Error::Validation(rejection.body_text()))?;
+    let (page, per_page) = params.resolve().map_err(Error::Validation)?;
+    Ok(Json(service::list(&state.db, page, per_page).await?))
 }
 
 pub async fn show(

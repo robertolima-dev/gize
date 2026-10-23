@@ -3,9 +3,20 @@ use sqlx::SqlitePool;
 use super::dto::{CreateMessage, UpdateMessage};
 use super::model::Message;
 
-pub async fn list(pool: &SqlitePool) -> Result<Vec<Message>, sqlx::Error> {
-    sqlx::query_as::<_, Message>("SELECT * FROM messages ORDER BY created_at DESC")
-        .fetch_all(pool)
+/// One page of rows, newest first. `id` breaks ties so the order is stable across pages.
+pub async fn list(pool: &SqlitePool, limit: i64, offset: i64) -> Result<Vec<Message>, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        "SELECT * FROM messages ORDER BY created_at DESC, id DESC LIMIT ?1 OFFSET ?2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn count(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(pool)
         .await
 }
 

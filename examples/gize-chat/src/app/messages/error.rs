@@ -48,7 +48,15 @@ impl IntoResponse for Error {
                 "a referenced record does not exist or is still in use".to_string(),
             ),
             Error::Validation(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
-            Error::Database(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+            Error::Database(error) => {
+                // Log the detail server-side; never return a raw database error to the client
+                // (it can leak schema, SQL or connection internals).
+                tracing::error!(error = %error, "database error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal server error".to_string(),
+                )
+            }
         };
         (status, message).into_response()
     }

@@ -1,12 +1,23 @@
 use sqlx::SqlitePool;
 
-use super::dto::{CreateUser, UpdateUser};
+use super::dto::{CreateUser, Page, UpdateUser};
 use super::error::Error;
 use super::model::User;
 use super::repository;
 
-pub async fn list(pool: &SqlitePool) -> Result<Vec<User>, Error> {
-    repository::list(pool).await.map_err(Error::from)
+/// One page of `users` plus the total row count (ADR-022). `page` is 1-based.
+pub async fn list(pool: &SqlitePool, page: u32, per_page: u32) -> Result<Page<User>, Error> {
+    let offset = i64::from(page - 1) * i64::from(per_page);
+    let items = repository::list(pool, i64::from(per_page), offset)
+        .await
+        .map_err(Error::from)?;
+    let total = repository::count(pool).await.map_err(Error::from)?;
+    Ok(Page {
+        items,
+        page,
+        per_page,
+        total: u64::try_from(total).unwrap_or_default(),
+    })
 }
 
 pub async fn find(pool: &SqlitePool, id: uuid::Uuid) -> Result<User, Error> {
