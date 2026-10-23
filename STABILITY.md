@@ -52,7 +52,9 @@ Gize's product is the CLI and the code it generates. The following are the cover
 - **The library crates' Rust APIs** (`gize-core`, `gize-generator`, `gize-templates`, `gize-db`,
   `gize-openapi`, `gize-admin`, `gize-macros`). They are published so the CLI and plugins can
   build, but they are implementation details, not a supported library surface. Depend on the
-  `gize` CLI, not on these crates' internals.
+  `gize` CLI, not on these crates' internals. They share the CLI's version number, so a minor
+  release can break their APIs; a plugin that depends on them should pin the exact version
+  (`gize-generator = "=1.0.0"`), as the CLI does for its own crates.
 
 ## Supported toolchain (MSRV)
 

@@ -13,9 +13,13 @@ When you're done, please file a report using the **RC validation report** issue 
 - Install the CLI **from crates.io** (a cold install — this is part of what we're validating):
 
   ```sh
-  cargo install gize --locked
-  gize --version
+  cargo install gize --locked --version 1.0.0-rc.1
+  gize --version            # gize 1.0.0-rc.1
   ```
+
+  `--version` is needed: cargo never picks a pre-release on its own, so a plain
+  `cargo install gize --locked` installs the latest stable 0.9.x instead. Already installed?
+  Add `--force`.
 
 This walkthrough uses **SQLite** so you need no database server. To validate a more realistic
 setup, repeat it with `--database postgres` (or `mysql`) and a running server.
@@ -133,7 +137,7 @@ cargo test                # the generated tests compile and pass
 
 ## Acceptance checklist
 
-- [ ] Cold `cargo install gize --locked` worked.
+- [ ] Cold `cargo install gize --locked --version 1.0.0-rc.1` worked.
 - [ ] Scaffolding + `make crud` (incl. a `belongs_to`) produced a compiling project.
 - [ ] `migrate`, `createadmin`, `serve` worked end to end.
 - [ ] Auth matrix matched: 401 without a token, 403 for a non-admin on `users`, 200 for an admin,
