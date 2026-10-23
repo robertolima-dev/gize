@@ -212,6 +212,18 @@ value) until `src/app/users/dto.rs` and `src/app/users/handler.rs` are regenerat
 with the ones a 0.9.11 project generates, or, if `gize sync --dry-run` lists only those files as
 drift, run `gize sync --force`. Clients that send `is_admin` work with both versions.
 
+### → 1.0.0-rc.1 — pnpm 11 and stricter `gize.toml`
+
+- **Admin on pnpm 11.** Run `gize sync`: it adds `admin/pnpm-workspace.yaml`, which lets
+  `pnpm install` build esbuild on pnpm 10 and 11. `admin/package.json` is then reported as drift;
+  delete its `"pnpm": { "onlyBuiltDependencies": [...] }` block to silence pnpm 11's warning,
+  or leave it, since it does no harm. On npm or yarn nothing changes.
+- **Manifest checks.** A `gize.toml` written by `gize new` already passes. A hand-edited one
+  now fails to load if `[stack] database` is not `postgres`, `sqlite` or `mysql`, if
+  `framework`/`orm` are not `axum`/`sqlx`, or if `[api]` holds a version other than `v` plus a
+  number or a prefix that isn't a path. Such values were silently read as PostgreSQL/Axum, so
+  fix them to what the project really is.
+
 ## If an upgrade breaks something
 
 If `gize sync` proposes to overwrite a file you did **not** ask it to, or a compatible upgrade

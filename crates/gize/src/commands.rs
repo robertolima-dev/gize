@@ -57,8 +57,8 @@ pub fn new_project(
         bail!("directory `{name}` already exists (use --force to generate into it)");
     }
 
-    let dialect = Dialect::from_database(database);
-    let api = api_version.map(Api::from_version);
+    let dialect = Dialect::parse(database)?;
+    let api = api_version.map(Api::parse_version).transpose()?;
     let plan = scaffold::new_project(
         name,
         !no_user,

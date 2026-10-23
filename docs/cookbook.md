@@ -188,7 +188,7 @@ gize serve             # serves the API and, when an admin exists, the admin dev
 ## Add a WebSocket endpoint
 
 ```sh
-gize new chat --websocket      # scaffolds src/app/ws/ with a typed echo endpoint (ADR-018)
+gize new chat --ws      # scaffolds src/app/ws/ with a typed echo endpoint (ADR-018)
 ```
 
 For an existing project, set `websocket = true` under `[features]` and `gize sync`.

@@ -95,6 +95,7 @@ pub fn admin_shell_plan(manifest: &Manifest) -> Plan {
     let project = &manifest.project.name;
     Plan::new()
         .create("admin/package.json", gize_admin::package_json(project))
+        .create("admin/pnpm-workspace.yaml", gize_admin::pnpm_workspace())
         .create("admin/vite.config.ts", gize_admin::vite_config())
         .create("admin/tsconfig.json", gize_admin::tsconfig())
         .create("admin/index.html", gize_admin::index_html())

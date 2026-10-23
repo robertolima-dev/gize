@@ -137,7 +137,7 @@ pub enum MakeCommand {
         #[command(flatten)]
         flags: GenFlags,
     },
-    /// Generate the admin SPA (a separate Vite + React app) for all resources (Beta).
+    /// Generate the admin SPA (a separate Vite + React app) for all resources.
     Admin {
         /// Optional resource name (informational; the admin is generated for every resource).
         name: Option<String>,

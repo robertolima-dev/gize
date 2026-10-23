@@ -110,7 +110,7 @@ dev server for you on first run — you don't need to touch `pnpm` yourself. If 
 manager command by hand, run it from the `admin/` directory.
 
 Repeat steps 1–4 with `--database postgres`/`mysql`, or scaffold with `--api-version 1` (routes
-under `/api/v1/...`) or `--websocket`.
+under `/api/v1/...`) or `--ws`.
 
 ## 6. Regeneration safety
 

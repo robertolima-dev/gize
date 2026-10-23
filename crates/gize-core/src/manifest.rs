@@ -79,10 +79,42 @@ impl Api {
         }
     }
 
+    /// Like [`Api::from_version`], but only `1`, `v1`, `V2`… are accepted: the version becomes a
+    /// URL path segment, so `abc` or `v1/../x` is an error rather than a route.
+    pub fn parse_version(raw: &str) -> Result<Self> {
+        let api = Self::from_version(raw);
+        anyhow::ensure!(
+            is_version_segment(&api.version),
+            "invalid API version `{}` (use a number, e.g. `--api-version 1` or `v1`)",
+            raw.trim()
+        );
+        Ok(api)
+    }
+
     /// The full mount path the app is nested under, e.g. `/api/v1`.
     pub fn mount_path(&self) -> String {
         format!("{}/{}", self.prefix.trim_end_matches('/'), self.version)
     }
+}
+
+/// `v` followed by one or more ASCII digits, as [`Api::from_version`] normalizes it.
+fn is_version_segment(version: &str) -> bool {
+    version
+        .strip_prefix('v')
+        .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// `/` or `/seg/seg…`, each segment ASCII letters, digits, `-` or `_`.
+fn is_mount_prefix(prefix: &str) -> bool {
+    prefix.strip_prefix('/').is_some_and(|rest| {
+        rest.trim_end_matches('/').is_empty()
+            || rest.trim_end_matches('/').split('/').all(|seg| {
+                !seg.is_empty()
+                    && seg
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            })
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -219,7 +251,38 @@ impl Manifest {
             api: raw.api,
             modules,
         };
+        manifest.validate_stack_and_api()?;
         Ok(manifest)
+    }
+
+    /// Reject `[stack]` and `[api]` values Gize would otherwise misread: an unknown database
+    /// would generate PostgreSQL code, and a framework or ORM other than Axum/SQLx would be
+    /// ignored. Checked on every load, so no command runs against such a manifest.
+    fn validate_stack_and_api(&self) -> Result<()> {
+        crate::Dialect::parse(&self.stack.database).context("in gize.toml `[stack] database`")?;
+        anyhow::ensure!(
+            self.stack.framework.eq_ignore_ascii_case("axum"),
+            "unsupported framework `{}` in gize.toml `[stack]` (Gize 1.x generates Axum only)",
+            self.stack.framework
+        );
+        anyhow::ensure!(
+            self.stack.orm.eq_ignore_ascii_case("sqlx"),
+            "unsupported orm `{}` in gize.toml `[stack]` (Gize 1.x generates SQLx only)",
+            self.stack.orm
+        );
+        if let Some(api) = &self.api {
+            anyhow::ensure!(
+                is_version_segment(&api.version),
+                "invalid `[api] version = \"{}\"` in gize.toml (expected `v` and a number, e.g. `v1`)",
+                api.version
+            );
+            anyhow::ensure!(
+                is_mount_prefix(&api.prefix),
+                "invalid `[api] prefix = \"{}\"` in gize.toml (expected a path such as `/api`)",
+                api.prefix
+            );
+        }
+        Ok(())
     }
 
     /// Validate every module before any consumer can write a partial generation plan.
@@ -509,6 +572,40 @@ mod tests {
         assert_eq!(Api::from_version("V2").version, "v2");
         assert_eq!(Api::from_version(" 3 ").version, "v3");
         assert_eq!(Api::from_version("1").mount_path(), "/api/v1");
+    }
+
+    #[test]
+    fn api_version_must_be_a_number() {
+        assert_eq!(Api::parse_version("v2").unwrap().version, "v2");
+        for bad in ["abc", "v", "", "v1/../x", "1.0", "v1beta"] {
+            assert!(Api::parse_version(bad).is_err(), "`{bad}` was accepted");
+        }
+    }
+
+    #[test]
+    fn loading_rejects_stack_and_api_values_gize_would_misread() {
+        let load = |extra: &str| Manifest::from_toml(&format!("[project]\nname='a'\n{extra}"));
+        assert!(load("").is_ok());
+        assert!(load("[stack]\nframework='axum'\ndatabase='SQLite'\norm='sqlx'").is_ok());
+        assert!(load("[api]\nversion='v1'\nprefix='/api'").is_ok());
+        assert!(load("[api]\nversion='v1'\nprefix='/'").is_ok());
+
+        let err = |extra: &str| format!("{:#}", load(extra).unwrap_err());
+        let typo = err("[stack]\nframework='axum'\ndatabase='sqllite'\norm='sqlx'");
+        assert!(typo.contains("unknown database `sqllite`"), "{typo}");
+        assert!(
+            err("[stack]\nframework='actix'\ndatabase='postgres'\norm='sqlx'").contains("actix")
+        );
+        assert!(
+            err("[stack]\nframework='axum'\ndatabase='postgres'\norm='diesel'").contains("diesel")
+        );
+        assert!(err("[api]\nversion='vabc'\nprefix='/api'").contains("vabc"));
+        for prefix in ["api", "/api/../x", "/a b", ""] {
+            assert!(
+                load(&format!("[api]\nversion='v1'\nprefix='{prefix}'")).is_err(),
+                "prefix `{prefix}` was accepted"
+            );
+        }
     }
 
     #[test]

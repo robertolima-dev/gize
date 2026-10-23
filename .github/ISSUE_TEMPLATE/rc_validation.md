@@ -21,7 +21,7 @@ Follow `docs/validation.md` in the repo if you want a scripted walkthrough.
 
 ## Surface exercised
 
-- [ ] `gize new` (flags used: `--database` / `--openapi` / `--websocket` / `--api-version` / `--no-user`)
+- [ ] `gize new` (flags used: `--database` / `--openapi` / `--ws` / `--api-version` / `--no-user`)
 - [ ] `gize make crud` with at least one `belongs_to` relationship
 - [ ] `gize createadmin` + login
 - [ ] `gize migrate` (and `--status`)

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 (pre-1.0: minor versions may introduce changes to generated output).
 
 
+## [Unreleased]
+
+### Fixed
+
+- **Admin: `pnpm install` failed on pnpm 11.** pnpm 11 no longer reads the `pnpm` field of
+  `package.json`, so the esbuild approval in the generated `admin/package.json` was ignored and
+  the install stopped with `ERR_PNPM_IGNORED_BUILDS` (exit 1), which also broke the first
+  `gize serve`. The approval now lives in a generated `admin/pnpm-workspace.yaml`, under both
+  `allowBuilds` (pnpm 11, recent 10.x) and `onlyBuiltDependencies` (older 10.x); checked on
+  pnpm 9, 10.0, 10.12, 10.34 and 11.13. npm and yarn ignore the file. Existing projects get it
+  from `gize sync`; see [MIGRATION.md](./MIGRATION.md).
+- **`gize new --database` accepted typos.** An unknown value (`sqllite`) generated a PostgreSQL
+  project without a word. It is now an error listing `postgres`, `sqlite` and `mysql` (case
+  still doesn't matter).
+- **`gize new --api-version` accepted any text.** `abc` became the route prefix `/api/vabc`, and
+  `v1/../x` was written as is. Only a number, with or without the `v` (`1`, `v1`), is accepted.
+- **`gize.toml` values Gize would misread are rejected on load.** An unknown `[stack] database`
+  silently meant PostgreSQL, and `[stack] framework`/`orm` other than `axum`/`sqlx` were ignored.
+  Every command now refuses such a manifest, as it does an `[api] version` that isn't `v` plus a
+  number or an `[api] prefix` that isn't a path like `/api`.
+
+### Docs
+
+- The validation guide, cookbook and RC issue template used `--websocket`; the flag is `--ws`.
+- `gize make admin --help` no longer says "(Beta)": the admin is part of the stable surface.
+- `STABILITY.md` spells out what each `gize.toml` field accepts and the flags that are kept as
+  they are (`serve --with-admin`, the ignored `make admin [NAME]`, `features.authentication`).
+
 ## [0.9.12] - 2026-10-22
 
 ### Fixed

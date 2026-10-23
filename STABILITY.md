@@ -17,7 +17,22 @@ Gize's product is the CLI and the code it generates. The following are the cover
    a breaking change.
 2. **The `gize.toml` schema** — the tables and fields Gize reads and writes (`[project]`,
    `[stack]`, `[features]`, `[api]`, `[[module]]`). A manifest valid under version *N* stays
-   valid under later *N* releases; new optional fields may be added.
+   valid under later *N* releases; new optional fields may be added. What each field accepts:
+   - `[project] name`.
+   - `[stack] database`: `postgres`, `sqlite` or `mysql`. `framework` and `orm` record the
+     stack and must be `axum` and `sqlx`; other values are rejected, not ignored, so a later
+     major can give them a meaning.
+   - `[features]`: `admin`, `openapi` and `websocket` switch what `gize sync` generates.
+     `authentication` is informational: auth is always generated
+     ([ADR-013](./ADR/adr-013-auth.md)).
+   - `[api]` (optional): `version` is `v` plus a number (`v1`); `prefix` is a path (`/api`).
+   - `[[module]]`: `name`, `fields`, `belongs_to`, and `model`, written only when the struct
+     name does not come back from `name` (`Movie` → `movies`). The older
+     `[modules] list = [...]` form is still read and rewritten as `[[module]]` on the next save.
+
+   Kept as they are on purpose: `gize serve --with-admin` is the explicit form of the default,
+   and `gize make admin [NAME]` accepts a name and ignores it, because the admin always covers
+   every resource.
 3. **The generated-code contract** — not byte-for-byte, but the guarantees a generated project
    relies on: it **compiles**, is **clippy-clean** and **rustfmt-clean**, follows the module
    layout ([ADR-005](./ADR/adr-005-module-layout.md)), exposes the documented routes and auth

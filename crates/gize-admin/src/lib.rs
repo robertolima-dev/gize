@@ -39,13 +39,19 @@ pub fn package_json(project: &str) -> String {
     "@vitejs/plugin-react": "^4.3.2",
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
-  }},
-  "pnpm": {{
-    "onlyBuiltDependencies": ["esbuild"]
   }}
 }}
 "#
     )
+}
+
+/// `admin/pnpm-workspace.yaml` — lets pnpm run esbuild's install script, which pnpm 10+
+/// blocks by default. pnpm 11 reads only `allowBuilds` and fails the install on a blocked
+/// build; older pnpm 10 (10.12 checked) reads only `onlyBuiltDependencies`; pnpm 9 and 10.0
+/// refuse a workspace file without `packages`. npm and yarn ignore the file.
+pub fn pnpm_workspace() -> String {
+    "packages:\n  - \".\"\nallowBuilds:\n  esbuild: true\nonlyBuiltDependencies:\n  - esbuild\n"
+        .to_string()
 }
 
 /// `admin/vite.config.ts` — React, and a dev proxy so `/api/*` reaches the backend.
@@ -528,9 +534,14 @@ mod tests {
     }
 
     #[test]
-    fn package_json_approves_esbuild_build_so_serve_works_without_pnpm_approve_builds() {
-        // pnpm v10 blocks dependency build scripts by default; whitelisting esbuild lets the
-        // first-run `pnpm install` build it, so `gize serve` works without `pnpm approve-builds`.
-        assert!(package_json("blog").contains("\"onlyBuiltDependencies\": [\"esbuild\"]"));
+    fn pnpm_workspace_approves_esbuild_build_on_pnpm_10_and_11() {
+        // pnpm 10+ blocks dependency build scripts and pnpm 11 fails the install on one, so the
+        // first-run `pnpm install` behind `gize serve` needs esbuild approved in both spellings.
+        let ws = pnpm_workspace();
+        assert!(ws.contains("allowBuilds:\n  esbuild: true\n"));
+        assert!(ws.contains("onlyBuiltDependencies:\n  - esbuild\n"));
+        assert!(ws.starts_with("packages:\n"));
+        // pnpm 11 warns about, and ignores, the old `pnpm` field in package.json.
+        assert!(!package_json("blog").contains("\"pnpm\""));
     }
 }

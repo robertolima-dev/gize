@@ -27,8 +27,23 @@ impl std::fmt::Display for Dialect {
 }
 
 impl Dialect {
+    /// Parse a `--database` or `stack.database` value, ignoring case. Unlike
+    /// [`Dialect::from_database`], an unknown name is an error, so a typo (`sqllite`) cannot
+    /// generate a PostgreSQL project.
+    pub fn parse(database: &str) -> anyhow::Result<Self> {
+        match database.to_ascii_lowercase().as_str() {
+            "postgres" => Ok(Dialect::Postgres),
+            "sqlite" => Ok(Dialect::Sqlite),
+            "mysql" => Ok(Dialect::MySql),
+            _ => {
+                anyhow::bail!("unknown database `{database}` (supported: postgres, sqlite, mysql)")
+            }
+        }
+    }
+
     /// Pick the dialect from the manifest's `stack.database` (`"sqlite"` → SQLite,
-    /// `"mysql"` → MySQL, else the Postgres default).
+    /// `"mysql"` → MySQL, else the Postgres default). Loading a manifest already rejects
+    /// unknown names (see [`Dialect::parse`]).
     pub fn from_database(database: &str) -> Self {
         if database.eq_ignore_ascii_case("sqlite") {
             Dialect::Sqlite
@@ -279,5 +294,15 @@ mod tests {
         assert_eq!(Dialect::from_database("mysql"), Dialect::MySql);
         assert_eq!(Dialect::from_database("cockroach"), Dialect::Postgres);
         assert_eq!(Dialect::from_database(""), Dialect::Postgres);
+    }
+
+    #[test]
+    fn parse_rejects_unknown_databases() {
+        assert_eq!(Dialect::parse("SQLite").unwrap(), Dialect::Sqlite);
+        assert_eq!(Dialect::parse("mysql").unwrap(), Dialect::MySql);
+        assert_eq!(Dialect::parse("postgres").unwrap(), Dialect::Postgres);
+        let err = Dialect::parse("sqllite").unwrap_err().to_string();
+        assert!(err.contains("unknown database `sqllite`"), "{err}");
+        assert!(Dialect::parse("postgresql").is_err());
     }
 }
